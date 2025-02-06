@@ -1,6 +1,6 @@
 # Type Checking Imports
 # ---------------------
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, List, Optional, Dict, Any
 if TYPE_CHECKING:
     from .database_manager import DatabaseManager
 
@@ -19,16 +19,39 @@ class ForeignKey:
     sequence: int                # Sequence number within the foreign key
     local_table: str             # The local table name (the table containing the foreign key)
     local_field: str             # The field in the local table (foreign key column)
-    referenced_table: str        # The referenced table name
-    referenced_field: str        # The field in the referenced table (primary key column)
+    related_table: str           # The referenced table name
+    related_field: str           # The field in the referenced table (primary key column)
     on_update: str               # Action on update (e.g., "CASCADE", "RESTRICT", "SET NULL")
     on_delete: str               # Action on delete (e.g., "CASCADE", "RESTRICT", "SET NULL")
     match: str                   # The match type (e.g., "NONE", "PARTIAL", "FULL")
 
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any], local_table: str) -> "ForeignKey":
+        """Create a ForeignKey instance from a dictionary of PRAGMA output.
+
+        Args:
+            data: A dictionary with keys matching SQLite PRAGMA output.
+            local_table: The name of the local table (since PRAGMA output does not include it).
+
+        Returns:
+            An instance of ForeignKey with fields populated from the dictionary.
+        """
+        return cls(
+            constraint_id = data["id"],
+            sequence = data["seq"],
+            local_table = local_table,
+            local_field = data["from"],      # 'from' in SQLite output becomes local_field here.
+            related_table = data["table"],
+            related_field = data["to"],        # 'to' in SQLite output becomes related_field.
+            on_update = data["on_update"],
+            on_delete = data["on_delete"],
+            match = data["match"]
+        )
+
     def get_field_definition(self) -> str:
         """Generate the SQL definition string for this foreign key.
         """
-        definition = (f"FOREIGN KEY({self.local_field}) REFERENCES {self.referenced_table}({self.referenced_field}) "
+        definition = (f"FOREIGN KEY({self.local_field}) REFERENCES {self.related_table}({self.related_field}) "
                       f"ON UPDATE {self.on_update} ON DELETE {self.on_delete}")
         if self.match and self.match != 'NONE':
             definition += f" MATCH {self.match}"
@@ -40,10 +63,10 @@ class ManyToManyField:
     """
     track_field_name: str                   # The field name used for display purposes
     local_table: str                        # The originating table name
-    remote_table: str                       # The related table name
+    related_table: str                      # The related table name
     junction_table: str                     # The name of the junction table
     local_fk: ForeignKey                    # ForeignKeyInfo for the local table
-    remote_fk: ForeignKey                   # ForeignKeyInfo for the remote table
+    related_fk: ForeignKey                  # ForeignKeyInfo for the remote table
 
 @dataclass
 class FieldInfo:
@@ -94,8 +117,8 @@ class FieldInfo:
 class RelationStep:
     local_table: str
     foreign_key: str
-    referenced_table: str
-    referenced_field: str
+    related_table: str
+    related_field: str
 
 @dataclass
 class RelationChain:
@@ -128,11 +151,11 @@ class RelationChain:
             step = RelationStep(
                 local_table=current_table,
                 foreign_key=fk_column,
-                referenced_table=field_info.fk.referenced_table,
-                referenced_field=field_info.fk.referenced_field
+                related_table=field_info.fk.related_table,
+                related_field=field_info.fk.related_field
             )
             relation_chain.steps.append(step)
-            current_table = step.referenced_table
+            current_table = step.related_table
             current_model = db_manager.get_model(current_table)
 
         # The last part is the field to select from the final table

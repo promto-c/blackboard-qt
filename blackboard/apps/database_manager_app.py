@@ -591,10 +591,10 @@ class AddManyToManyFieldDialog(QtWidgets.QDialog):
     def _update_junction_table_name(self):
         """Automatically set the junction table name based on selected tables.
         """
-        referenced_table = self.to_table_dropdown.currentText()
-        if referenced_table:
+        related_table = self.to_table_dropdown.currentText()
+        if related_table:
             # Sort table names alphabetically and join them with an underscore
-            sorted_tables = sorted([self.local_model.name, referenced_table])
+            sorted_tables = sorted([self.local_model.name, related_table])
             junction_name = "_".join(sorted_tables)
             self.junction_table_input.setText(junction_name)
 
@@ -602,20 +602,20 @@ class AddManyToManyFieldDialog(QtWidgets.QDialog):
         """Handle adding the many-to-many relationship field.
         """
         junction_table_name = self.junction_table_input.text()
-        referenced_table = self.to_table_dropdown.currentText()
+        related_table = self.to_table_dropdown.currentText()
         local_field = self.from_key_field_dropdown.currentText()
         from_display_field = self.from_display_field_dropdown.currentText()
-        referenced_field = self.to_key_field_dropdown.currentText()
+        related_field = self.to_key_field_dropdown.currentText()
         to_display_field = self.to_display_field_dropdown.currentText()
         track_vice_versa = self.track_vice_versa_checkbox.isChecked()
 
         self.db_manager.create_junction_table(
             from_table=self.local_model.name,
-            to_table=referenced_table,
+            to_table=related_table,
             from_field=local_field,
-            to_field=referenced_field,
+            to_field=related_field,
             junction_table_name=junction_table_name,
-            track_field_name=f"{referenced_table}_{referenced_field}s",
+            track_field_name=f"{related_table}_{related_field}s",
             track_field_vice_versa_name=f"{self.local_model.name}_{local_field}s",
             from_display_field=from_display_field,
             to_display_field=to_display_field,
@@ -812,7 +812,7 @@ class DBWidget(QtWidgets.QWidget):
         table_name = current_item.text()
         self.current_table = table_name
         self.current_model = self.db_manager.get_model(self.current_table)
-        self.data_view.set_table(self.current_table)
+        self.data_view.set_model(self.current_table)
         self.field_name_to_info = self.current_model.get_fields()
 
         self.fields_list_widget.clear()
@@ -822,7 +822,7 @@ class DBWidget(QtWidgets.QWidget):
             column_definition = field_info.get_field_definition()
 
             if field_info.is_foreign_key:
-                column_definition += f" (FK to {field_info.fk.referenced_table}.{field_info.fk.referenced_field})"
+                column_definition += f" (FK to {field_info.fk.related_table}.{field_info.fk.related_field})"
 
             self.fields_list_widget.addItem(column_definition)
 

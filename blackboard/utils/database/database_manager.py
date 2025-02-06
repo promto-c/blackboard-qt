@@ -22,7 +22,7 @@ class DatabaseManager:
     FIELD_TYPES = ["INTEGER", "REAL", "TEXT", "BLOB", "NULL", "DATETIME", "ENUM"]
     PRIMARY_KEY_TYPES = ["INTEGER", "TEXT"]
 
-    DB_TYPE_TO_DATABASE_CONNECTION = {
+    DB_TYPE_TO_DATABASE = {
         'sqlite': SQLiteDatabase
     }
 
@@ -37,9 +37,9 @@ class DatabaseManager:
         """
         self._db_name = db_name
 
-        self.db_connection = self.DB_TYPE_TO_DATABASE_CONNECTION.get(db_type)(db_name)
-        self.connection = self.db_connection.connection
-        self.cursor = self.db_connection.cursor
+        self.database = self.DB_TYPE_TO_DATABASE.get(db_type)(db_name)
+        self.connection = self.database.connection
+        self.cursor = self.database.cursor
 
     # Table Manager
     # -------------
@@ -52,7 +52,7 @@ class DatabaseManager:
         Returns:
             bool: True if the table exists, False otherwise.
         """
-        return self.db_connection.is_table_exists(table_name)
+        return self.database.is_table_exists(table_name)
 
     def create_table(self, table_name: str, fields: Dict[str, str]):
         """Create a new table in the database with specified fields.
@@ -61,7 +61,7 @@ class DatabaseManager:
             table_name (str): The name of the table to create.
             fields (Dict[str, str]): A dictionary mapping field names to their SQLite data types.
         """
-        return self.db_connection.create_table(table_name, fields)
+        return self.database.create_table(table_name, fields)
 
     def delete_table(self, table_name: str):
         """Delete an entire table from the database.
@@ -69,7 +69,7 @@ class DatabaseManager:
         Args:
             table_name (str): The name of the table to delete.
         """
-        self.db_connection.delete_table(table_name)
+        self.database.delete_table(table_name)
 
     def get_table_names(self) -> List[str]:
         """Retrieve the names of all tables in the database.
@@ -80,7 +80,7 @@ class DatabaseManager:
         Raises:
             sqlite3.Error: If there is an error executing the SQL command.
         """
-        return self.db_connection.get_table_names()
+        return self.database.get_table_names()
 
     def get_view_names(self) -> List[str]:
         """Retrieve the names of all views in the database.
@@ -91,7 +91,7 @@ class DatabaseManager:
         Raises:
             sqlite3.Error: If there is an error executing the SQL command.
         """
-        return self.db_connection.get_view_names()
+        return self.database.get_view_names()
 
     def get_field_type(self, table_name: str, field_name: str) -> str:
         """Retrieve the data type of a specific field in a specified table.
@@ -103,10 +103,10 @@ class DatabaseManager:
         Returns:
             str: The data type of the field.
         """
-        return self.db_connection.get_field_type(table_name, field_name)
+        return self.database.get_field_type(table_name, field_name)
 
     def get_model(self, table_name: str) -> 'AbstractModel':
-        return self.db_connection.get_model(table_name)
+        return self.database.get_model(table_name)
     
     # Additional
     def create_junction_table(self, from_table: str, to_table: str, from_field: str = 'id', to_field: str = 'id',
@@ -128,7 +128,7 @@ class DatabaseManager:
         Raises:
             sqlite3.Error: If there is an error executing the SQL command.
         """
-        return self.db_connection.create_junction_table(
+        return self.database.create_junction_table(
             from_table, to_table, from_field, to_field,
             junction_table_name, track_field_name, track_field_vice_versa_name,
             from_display_field, to_display_field, track_vice_versa
@@ -142,21 +142,21 @@ class DatabaseManager:
         Returns:
             List[str]: A list of table names that match the 'enum_%' pattern.
         """
-        self.db_connection.cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'enum_%'")
+        self.database.cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'enum_%'")
         return [row[0] for row in self.cursor.fetchall()]
 
     def get_enum_table_name(self, table_name: str, field_name: str) -> Optional[str]:
         """Retrieve the name of the enum table associated with a given field.
         """
         try:
-            self.db_connection.cursor.execute('''
+            self.database.cursor.execute('''
                 SELECT enum_table_name FROM _meta_enum_field
                 WHERE table_name = ? AND field_name = ?;
             ''', (table_name, field_name))
         except sqlite3.OperationalError:
             pass
 
-        if not (results := self.db_connection.cursor.fetchone()):
+        if not (results := self.database.cursor.fetchone()):
             return
 
         return results[0]
@@ -189,11 +189,11 @@ class DatabaseManager:
         if not table_name.isidentifier():
             raise ValueError("Invalid enum name")
 
-        self.db_connection.cursor.execute(f"CREATE TABLE IF NOT EXISTS {table_name} (id INTEGER PRIMARY KEY AUTOINCREMENT, value TEXT UNIQUE)")
+        self.database.cursor.execute(f"CREATE TABLE IF NOT EXISTS {table_name} (id INTEGER PRIMARY KEY AUTOINCREMENT, value TEXT UNIQUE)")
 
         # Insert enum values
         for value in values:
-            self.db_connection.cursor.execute(f"INSERT OR IGNORE INTO {table_name} (value) VALUES (?)", (value,))
+            self.database.cursor.execute(f"INSERT OR IGNORE INTO {table_name} (value) VALUES (?)", (value,))
 
         self.connection.commit()
 
@@ -230,7 +230,7 @@ class ViewModel:
         self._relation_chains.append(relation_chain)
         # Cache join tables
         for step in relation_chain.steps:
-            self._join_tables.add((step.local_table, step.foreign_key, step.referenced_table, step.referenced_field))
+            self._join_tables.add((step.local_table, step.foreign_key, step.related_table, step.related_field))
         # Add the select fields
         self._selected_fields.extend(relation_chain.select_fields)
 
@@ -257,18 +257,18 @@ class ViewModel:
             current_alias = self._aliases.get(current_table, current_table)
             for step in relation_chain.steps:
                 # Generate an alias for the referenced table if not already aliased
-                if step.referenced_table not in self._aliases:
-                    alias = f"{step.referenced_table}_alias{self._alias_counter}"
+                if step.related_table not in self._aliases:
+                    alias = f"{step.related_table}_alias{self._alias_counter}"
                     self._alias_counter += 1
-                    self._aliases[step.referenced_table] = alias
+                    self._aliases[step.related_table] = alias
                 else:
-                    alias = self._aliases[step.referenced_table]
+                    alias = self._aliases[step.related_table]
                 # Build the JOIN clause
-                join_clause = f" LEFT JOIN {step.referenced_table} AS {alias} ON {current_alias}.{step.foreign_key} = {alias}.{step.referenced_field}"
+                join_clause = f" LEFT JOIN {step.related_table} AS {alias} ON {current_alias}.{step.foreign_key} = {alias}.{step.related_field}"
                 join_clauses.append(join_clause)
                 # Update current table and alias
                 current_alias = alias
-                current_table = step.referenced_table
+                current_table = step.related_table
         # Append the JOIN clauses to the query
         query += ' '.join(join_clauses)
         return query

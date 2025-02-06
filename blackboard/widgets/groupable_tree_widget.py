@@ -422,6 +422,8 @@ class TreeUtilityToolBar(QtWidgets.QToolBar):
         self.uniform_row_height_slider.valueChanged.connect(self.tree_widget.set_row_height)
         self.reload_action.triggered.connect(self.tree_widget.reload_requested.emit)
 
+
+# TODO: Fix cell color blending when set color adaptive at first column
 class GroupableTreeWidget(MomentumScrollTreeWidget):
     """A QTreeWidget subclass that displays data in a tree structure with the ability to group data by a specific column.
 
@@ -436,7 +438,7 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
     ungrouped_all = QtCore.Signal()
     item_added = QtCore.Signal(TreeWidgetItem)
     drag_started = QtCore.Signal(QtCore.Qt.DropActions)
-    about_to_show_header_menu = QtCore.Signal(int)
+    about_to_show_header_menu = QtCore.Signal(str)
     fetch_complete = QtCore.Signal()
     reload_requested = QtCore.Signal()
     field_changed = QtCore.Signal()
@@ -459,8 +461,8 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         # ----------
         # Store the current grouped column name
         self.fields: List[str] = []
-        self.color_adaptive_columns: List[int] = []
-        self.grouped_column_names: List[str] = []
+        self.color_adaptive_fields: List[int] = []
+        self.grouped_fields: List[str] = []
 
         # Initialize FetchManager
         self.fetch_manager = FetchManager(self)
@@ -473,7 +475,7 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         # ------------------
         self._primary_key = None
         self._row_height = self.DEFAULT_ROW_HEIGHT
-        self._current_column_index = 0
+        self._selected_field = 0
 
         self._id_to_tree_item: Dict[Any, QtWidgets.QTreeWidgetItem] = {}
 
@@ -580,12 +582,12 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         hide_this_column = manage_columns_section_action.addAction(text='Hide This Column')
 
         # Connect actions to their corresponding methods
-        self.group_by_action.triggered.connect(lambda: self.group_by_column(self._current_column_index))
+        self.group_by_action.triggered.connect(lambda: self.group_by(self._selected_field))
         ungroup_all_action.triggered.connect(self.ungroup_all)
-        apply_color_adaptive_action.triggered.connect(lambda: self.apply_color_adaptive_column(self._current_column_index))
-        reset_all_color_adaptive_action.triggered.connect(self.clear_color_adaptive_columns)
+        apply_color_adaptive_action.triggered.connect(lambda: self.apply_color_adaptive(self._selected_field))
+        reset_all_color_adaptive_action.triggered.connect(self.clear_color_adaptive)
         fit_column_in_view_action.triggered.connect(self.fit_column_in_view)
-        hide_this_column.triggered.connect(lambda: self.hideColumn(self._current_column_index))
+        hide_this_column.triggered.connect(lambda: self.hideColumn(self._selected_field))
 
     def _show_header_context_menu(self, pos: QtCore.QPoint):
         """Show a context menu for the header of the tree widget.
@@ -594,41 +596,17 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
             pos (QtCore.QPoint): The position where the right-click occurred.
         """
         # Get the index of the column where the right click occurred
-        self._current_column_index = self.header().logicalIndexAt(pos)
+        self._selected_field = self.fields[self.header().logicalIndexAt(pos)]
 
         # Emit the custom signal with the column index
-        self.about_to_show_header_menu.emit(self._current_column_index)
+        self.about_to_show_header_menu.emit(self._selected_field)
 
-        # Disable 'Group by this column' on the first column
-        self.group_by_action.setEnabled(bool(self._current_column_index))
-        if self.fields[self._current_column_index] in self.grouped_column_names:
+        # Disable 'Group by this column' on grouped column
+        if self._selected_field in self.grouped_fields:
             self.group_by_action.setEnabled(False)
 
         # Show the context menu
         self.header_menu.popup(QtGui.QCursor.pos())
-
-    # TODO: Move to util
-    @staticmethod
-    def group_tree_items_by_column(items: List[QtWidgets.QTreeWidgetItem], column: int, default_group: str = '_others'
-                                   ) -> Dict[str, List[QtWidgets.QTreeWidgetItem]]:
-        """Group QTreeWidgetItem data into a dictionary by column value.
-
-        Args:
-            items (List[QtWidgets.QTreeWidgetItem]): The items to be grouped.
-            column (int): The column index from which to extract group keys.
-            default_group (str): The label to use for items without a specific group key. Defaults to '_others'.
-
-        Returns:
-            Dict[str, List[QtWidgets.QTreeWidgetItem]]: A dictionary mapping each unique value in the specified column to a list of tree items.
-        """
-        # Create a defaultdict to store the groups
-        group_name_to_tree_items = defaultdict(list)
-
-        for item in items:
-            key_data = item.data(column, QtCore.Qt.ItemDataRole.UserRole) or default_group
-            group_name_to_tree_items[key_data].append(item)
-
-        return group_name_to_tree_items
 
     def _highlight_selected_items(self):
         """Highlight the specified `tree_items` in the tree widget.
@@ -705,6 +683,7 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         for i in selected_items:
             i.setExpanded(reference_item.isExpanded())
 
+    # TODO: Move out
     def get_column_value_range(self, column: int, child_level: int = 0) -> Tuple[Optional['Number'], Optional['Number']]:
         """Get the value range of a specific column at a given child level.
 
@@ -744,7 +723,7 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         # Return the value range
         return min_value, max_value
 
-    def apply_color_adaptive_column(self, column: int):
+    def apply_color_adaptive(self, field: str):
         """Apply adaptive color mapping to a specific column at the appropriate child level determined by the group column.
 
         This method calculates the minimum and maximum values of the column at the appropriate child level determined by the group column
@@ -754,41 +733,45 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         Args:
             column (int): The index of the column to apply the adaptive color mapping.
         """
-        self.color_adaptive_columns.append(column)
+        if field in self.color_adaptive_fields:
+            return
+
+        self.color_adaptive_fields.append(field)
 
         # Determine the child level based on the presence of a grouped column
-        child_level = len(self.grouped_column_names)
+        child_level = len(self.grouped_fields)
 
         # Calculate the minimum and maximum values of the column at the determined child level
+        column = self.get_column_index(field)
         min_value, max_value = self.get_column_value_range(column, child_level)
 
         # Create and set the adaptive color mapping delegate for the column
         delegate = widgets.AdaptiveColorMappingDelegate(self, min_value, max_value)
         self.setItemDelegateForColumn(column, delegate)
 
-    def remove_color_adaptive_column(self, column: int):
+    def remove_color_adaptive(self, field: str):
         """Remove adaptive color mapping from a specific column.
 
         This method removes the adaptive color mapping from the specified column by resetting
         the item delegate to None and removing the column from the list of adaptive color-mapped columns.
 
         Args:
-            column (int): The index of the column to remove adaptive color mapping from.
+            field (str): The field to remove adaptive color mapping from.
         """
-        if column not in self.color_adaptive_columns:
+        if field not in self.color_adaptive_fields:
             return
 
         # Reset the item delegate for the column, removing the adaptive color mapping
-        self.color_adaptive_columns.remove(column)
-        self.setItemDelegateForColumn(column, None)
+        self.color_adaptive_fields.remove(field)
+        self.setItemDelegateForColumn(self.get_column_index(field), None)
 
-    def clear_color_adaptive_columns(self):
+    def clear_color_adaptive(self):
         """Reset the color adaptive for all columns in the tree widget.
         """
-        for column in self.color_adaptive_columns:
-            self.setItemDelegateForColumn(column, None)
+        for field in self.color_adaptive_fields:
+            self.setItemDelegateForColumn(self.get_column_index(field), None)
 
-        self.color_adaptive_columns.clear()
+        self.color_adaptive_fields.clear()
 
     def get_column_index(self, column_name: str) -> Optional[int]:
         """Retrieve the index of the specified column name.
@@ -863,10 +846,10 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
                 item_id = data_dict.get(self._primary_key) or uuid.uuid1()
 
         # Determine the parent for the new item
-        if parent is self.invisibleRootItem() and self.grouped_column_names:
-            for grouped_column_name in self.grouped_column_names:
+        if parent is self.invisibleRootItem() and self.grouped_fields:
+            for grouped_field_name in self.grouped_fields:
                 # If the tree is grouped, find the appropriate parent group item
-                group_value = data_dict.get(grouped_column_name, "_others")
+                group_value = data_dict.get(grouped_field_name, "_others")
 
                 if group_value not in parent.child_grouped_dict:
                     new_grouped_item = TreeWidgetItem(parent, [group_value])
@@ -967,7 +950,7 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
 
         return tree_item
 
-    def group_by_column(self, column: Union[int, str]):
+    def group_by(self, column: Union[int, str]):
         """Group the items in the tree widget by the values in the specified column.
 
         Args:
@@ -980,23 +963,23 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         self.setColumnHidden(column, True)
 
         # Group the data and add the tree items to the appropriate group
-        if not self.grouped_column_names:
+        if not self.grouped_fields:
             parent_item = self.invisibleRootItem()
             parent_item.child_grouped_dict = {}
             self.group_items(parent_item, column)
         else:
-            lowest_grouped_items = TreeUtil.get_child_items(self, target_depth=len(self.grouped_column_names) - 1)
+            lowest_grouped_items = TreeUtil.get_child_items(self, target_depth=len(self.grouped_fields) - 1)
             for lowest_grouped_item in lowest_grouped_items:
                 self.group_items(lowest_grouped_item, column)
 
         # Get the label for the column that we want to group by and the label for the first column 
-        grouped_column_name = self.headerItem().text(column)
-        self.grouped_column_names.append(grouped_column_name)
+        grouped_field_name = self.headerItem().text(column)
+        self.grouped_fields.append(grouped_field_name)
 
         # Store original and rename the first column
         first_column_name = self.fields[0]
         self.headerItem().setData(0, QtCore.Qt.ItemDataRole.UserRole, first_column_name)
-        grouped_column_names_str = ' / '.join(self.grouped_column_names + [first_column_name])
+        grouped_column_names_str = ' / '.join(self.grouped_fields + [first_column_name])
         self.setHeaderLabel(grouped_column_names_str)
 
         # Expand all items
@@ -1057,19 +1040,19 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         """Ungroup all the items in the tree widget.
         """
         # Return if there are no groups to ungroup
-        if not self.grouped_column_names:
+        if not self.grouped_fields:
             return
 
         # Reset the header label
         self.setHeaderLabel(self.fields[0])
         
         # Show hidden column
-        for grouped_column_name in self.grouped_column_names:
-            column_index = self.get_column_index(grouped_column_name)
+        for grouped_field_name in self.grouped_fields:
+            column_index = self.get_column_index(grouped_field_name)
             self.setColumnHidden(column_index, False)
 
         # Get target items at a specific child level
-        target_items = TreeUtil.get_child_items(self, target_depth=len(self.grouped_column_names))
+        target_items = TreeUtil.get_child_items(self, target_depth=len(self.grouped_fields))
 
         # Reparent to root and remove the empty grouped items
         TreeItemUtil.remove_items(target_items)
@@ -1077,7 +1060,7 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         self.addTopLevelItems(target_items)
 
         # Clear the grouped columns
-        self.grouped_column_names.clear()
+        self.grouped_fields.clear()
 
         # Resize first columns to fit their contents
         self.resizeColumnToContents(0)
@@ -1174,8 +1157,8 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         """
         settings.beginGroup(group_name)
         settings.setValue('header_state', self.header().saveState())
-        settings.setValue('color_adaptive_columns', self.color_adaptive_columns)
-        settings.setValue('group_column_names', self.grouped_column_names)
+        settings.setValue('color_adaptive_fields', self.color_adaptive_fields)
+        settings.setValue('group_column_names', self.grouped_fields)
         settings.setValue('uniform_row_height', self._row_height)
         settings.endGroup()
 
@@ -1188,8 +1171,8 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         """
         settings.beginGroup(group_name)
         header_state = settings.value('header_state', QtCore.QByteArray)
-        color_adaptive_columns = settings.value('color_adaptive_columns', type=list)
-        grouped_column_names = settings.value('grouped_column_names', type=list)
+        color_adaptive_fields = settings.value('color_adaptive_fields', type=list)
+        grouped_fields = settings.value('grouped_fields', type=list)
         uniform_row_height = int(settings.value('uniform_row_height', self.DEFAULT_ROW_HEIGHT))
         settings.endGroup()
 
@@ -1197,9 +1180,9 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
             return
 
         self.header().restoreState(header_state)
-        self._restore_color_adaptive_column(color_adaptive_columns)
-        for grouped_column_name in grouped_column_names:
-            self.group_by_column(grouped_column_name)
+        self._restore_color_adaptive_fields(color_adaptive_fields)
+        for grouped_field in grouped_fields:
+            self.group_by(grouped_field)
         self.set_row_height(uniform_row_height)
         self.column_management_widget.update_columns()
 
@@ -1242,16 +1225,16 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         if value >= self.verticalScrollBar().maximum() - self.fetch_manager.THRESHOLD_TO_FETCH_MORE:
             self.fetch_manager.fetch_more()
 
-    def _restore_color_adaptive_column(self, columns: List[int]):
+    def _restore_color_adaptive_fields(self, fields: List[int]):
         """Restore the color adaptive columns.
 
         Args:
-            columns (List[int]): The columns to restore.
+            fields (List[int]): The fields to restore.
         """
-        self.clear_color_adaptive_columns()
+        self.clear_color_adaptive()
 
-        for column in columns:
-            self.apply_color_adaptive_column(column)
+        for field in fields:
+            self.apply_color_adaptive(field)
 
     # Override Methods
     # ----------------

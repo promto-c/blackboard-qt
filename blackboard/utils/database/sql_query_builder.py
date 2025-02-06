@@ -123,7 +123,7 @@ class SQLQueryBuilder:
 
         # Convert input into a list of tuples: [(field, alias)]
         if not fields:
-            return "SELECT *"
+            return "SELECT *", grouped_field_aliases
         elif isinstance(fields, dict):
             # Convert each dictionary item into tuples of (field, alias)
             fields = [(field, alias) for field, alias in fields.items()]
@@ -140,7 +140,7 @@ class SQLQueryBuilder:
             fields = expanded_fields
         else:
             # Treat any other string input as a direct SELECT clause
-            return f"SELECT\n\t{fields}"
+            return f"SELECT\n\t{fields}", grouped_field_aliases
 
         # Handle both list of tuples (field, alias)
         select_parts = [

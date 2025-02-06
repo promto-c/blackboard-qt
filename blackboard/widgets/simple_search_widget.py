@@ -97,6 +97,7 @@ class MatchCountButton(QtWidgets.QPushButton):
         self.setText(self._current_label)
         self.unsetCursor()
 
+
 class SearchFieldButton(QtWidgets.QPushButton):
 
     def __init__(self, parent):
@@ -119,6 +120,7 @@ class SearchFieldButton(QtWidgets.QPushButton):
                 text-align: left;
             }
         ''')
+
 
 class SimpleSearchWidget(QtWidgets.QFrame):
 
@@ -155,11 +157,11 @@ class SimpleSearchWidget(QtWidgets.QFrame):
         # Attributes
         # ----------
         self.tabler_icon = TablerQIcon(opacity=0.6)
-        self.included_fields: Set[str] = set()
-        self.default_search_fields: Set[str] = set()
 
         # Private Attributes
         # ------------------
+        self._search_fields: Set[str] = set()
+        self._default_search_fields: Set[str] = set()
         self._all_match_items = set()
         self._is_active = False
         self._history = []
@@ -181,8 +183,8 @@ class SimpleSearchWidget(QtWidgets.QFrame):
         self.search_field_button = SearchFieldButton(self)
         self.search_field_menu = QtWidgets.QMenu()
         self.search_field_button.setMenu(self.search_field_menu)
-        self.search_field_menu.aboutToShow.connect(self._show_search_fields_menu)
-        self.line_edit = SearchEdit(self.tree_widget, self)
+
+        self.line_edit = SearchEdit(self)
 
         # Create and set up the match count button (for showing match count)
         self.__init_match_count_action()
@@ -221,6 +223,7 @@ class SimpleSearchWidget(QtWidgets.QFrame):
         self.match_count_button.clicked.connect(self.clear_search)
         self.tree_widget.item_added.connect(self._filter_item)
         self.tree_widget.fetch_complete.connect(self._refresh_match_count)
+        self.search_field_menu.aboutToShow.connect(self._show_search_fields_menu)
 
         # Bind keys using KeyBinder for _history navigation
         KeyBinder.bind_key('Enter', self.line_edit, self.activate)
@@ -245,21 +248,17 @@ class SimpleSearchWidget(QtWidgets.QFrame):
 
     # Public Methods
     # --------------
-    def clear_search(self):
-        self.set_global_search_field()
-        self.line_edit.clear()
-
     def set_default_search_fields(self, fields: Iterable[Union[str, int]] = set()):
         """Set the default search fields to be used when clearing search."""
         # Convert to set and assign default search fields
-        self.default_search_fields = set(fields)
+        self._default_search_fields = set(fields)
         self.clear_search()
 
     def clear_search(self):
         """Clear the search and restore the default search fields."""
-        if self.default_search_fields:
+        if self._default_search_fields:
             # Restore the default fields when clearing the search
-            self.set_search_fields(self.default_search_fields)
+            self.set_search_fields(self._default_search_fields)
         else:
             # If no default fields set, fall back to global search (clears included fields)
             self.set_global_search_field()
@@ -268,7 +267,7 @@ class SimpleSearchWidget(QtWidgets.QFrame):
         self.line_edit.clear()
 
     def set_global_search_field(self):
-        self.included_fields.clear()
+        self._search_fields.clear()
         self._update_search_field_text()
 
     def set_search_field(self, field: Union[str, int], checked: bool = True, apply_update: bool = True):
@@ -278,9 +277,9 @@ class SimpleSearchWidget(QtWidgets.QFrame):
             field = self.tree_widget.fields[field]
 
         if checked:
-            self.included_fields.add(field)
+            self._search_fields.add(field)
         else:
-            self.included_fields.discard(field)
+            self._search_fields.discard(field)
         
         if apply_update:
             self._update_search_field_text()
@@ -289,7 +288,7 @@ class SimpleSearchWidget(QtWidgets.QFrame):
     def set_search_fields(self, fields: Iterable[Union[str, int]], checked: bool = True, clear_existing: bool = True, apply_update: bool = True):
         """Set multiple fields for search with an option to clear existing fields or not."""
         if clear_existing:
-            self.included_fields.clear()  # Clears all previous fields
+            self._search_fields.clear()  # Clears all previous fields
         
         for field in fields:
             self.set_search_field(field, checked=checked, apply_update=False)
@@ -302,8 +301,9 @@ class SimpleSearchWidget(QtWidgets.QFrame):
     def set_text_as_selection(self):
         """Update the search edit text with the text of the currently selected items in the tree widget.
         """
-        fields = {index.column() for index in self.tree_widget.selectedIndexes()}
-        keywords = {f'"{index.data()}"' for index in self.tree_widget.selectedIndexes()}
+        selected_indexes = self.tree_widget.selectedIndexes()
+        fields = {index.column() for index in selected_indexes}
+        keywords = {f'"{index.data()}"' for index in selected_indexes}
 
         self.set_search_fields(fields)             
         self.line_edit.setText('|'.join(keywords))
@@ -360,27 +360,37 @@ class SimpleSearchWidget(QtWidgets.QFrame):
     @property
     def is_active(self):
         return self._is_active
+    
+    @property
+    def search_fields(self):
+        return self._search_fields
+
+    @property
+    def default_search_fields(self):
+        return self._default_search_fields
 
     # Private Methods
     # ---------------
     def _update_search_field_text(self):
-        """Update the search field text based on the current search configuration."""
-        if not self.included_fields:
+        """Update the search field text based on the current search configuration.
+        """
+        if not self._search_fields:
             text = 'Global'
-        elif len(self.included_fields) == 1:
-            text = next(iter(self.included_fields))
+        elif len(self._search_fields) == 1:
+            text = next(iter(self._search_fields))
         else:
-            text = f'{len(self.included_fields)} fields'
+            text = f'{len(self._search_fields)} fields'
         self.search_field_button.setText(text)
 
     def _show_search_fields_menu(self):
-        """Show a menu to select which fields to search by."""
+        """Show a menu to select which fields to search by.
+        """
         self.search_field_menu.clear()
 
         # Add the global search action
         global_search_action = self.search_field_menu.addAction("Global Search")
         global_search_action.setCheckable(True)
-        global_search_action.setChecked(not self.included_fields)
+        global_search_action.setChecked(not self._search_fields)
         global_search_action.triggered.connect(self.set_global_search_field)
 
         self.search_field_menu.addSeparator()
@@ -389,7 +399,7 @@ class SimpleSearchWidget(QtWidgets.QFrame):
         for field in self.tree_widget.fields:
             action = self.search_field_menu.addAction(field)
             action.setCheckable(True)
-            action.setChecked(field in self.included_fields)
+            action.setChecked(field in self._search_fields)
             action.triggered.connect(lambda checked, field=field: self.set_search_field(field, checked))
 
     def _filter_item(self, tree_item: 'QtWidgets.QTreeWidgetItem'):
@@ -430,18 +440,15 @@ class SimpleSearchWidget(QtWidgets.QFrame):
             list: A list of matched column indexes. If no match is found, returns an empty list.
         """
         matched_indexes = []
-        search_fields = self.included_fields or self.tree_widget.fields
+        search_fields = self._search_fields or self.tree_widget.fields
         for field in search_fields:
             field_index = self.tree_widget.get_column_index(field)
             item_text = item.text(field_index)
 
-            # Check quoted terms for exact match
-            if any(item_text == term for term in self.quoted_terms):
-                matched_indexes.append(field_index)
-                continue
-
-            # Check unquoted terms with wildcard support
-            if any(self._is_match_unquoted_term(item_text, term) for term in self.unquoted_terms):
+            # Check quoted terms for exact match or unquoted terms with wildcard support
+            if (any(item_text == term for term in self.quoted_terms) or
+                any(self._is_match_unquoted_term(item_text, term) for term in self.unquoted_terms)
+            ):
                 matched_indexes.append(field_index)
 
         return matched_indexes
@@ -488,7 +495,7 @@ class SimpleSearchWidget(QtWidgets.QFrame):
         # Extract terms from the keyword for search filtering
         self.quoted_terms, self.unquoted_terms = TextExtraction.extract_terms(keyword)
 
-        search_fields = self.included_fields or self.tree_widget.fields
+        search_fields = self._search_fields or self.tree_widget.fields
         for field in search_fields:
             column_index = self.tree_widget.get_column_index(field)
 
@@ -559,8 +566,8 @@ class SimpleSearchWidget(QtWidgets.QFrame):
         """
         # Show all items
         TreeUtil.show_all_items(self.tree_widget)
-
         self._highlight_matching_items()
+
 
 class SearchEdit(QtWidgets.QLineEdit):
     """Widget for simplified search functionality within a groupable tree widget. 
@@ -579,7 +586,7 @@ class SearchEdit(QtWidgets.QLineEdit):
 
     # Initialization and Setup
     # ------------------------
-    def __init__(self, tree_widget: 'GroupableTreeWidget', parent: QtWidgets.QWidget = None):
+    def __init__(self, parent: QtWidgets.QWidget = None):
         """Initialize the widget with a reference to the tree widget and sets up
         the UI components and signal connections.
 
@@ -589,9 +596,6 @@ class SearchEdit(QtWidgets.QLineEdit):
         """
         # Initialize the super class
         super().__init__(parent, placeholderText=self.PLACEHOLDER_TEXT)
-
-        # Store the arguments
-        self.tree_widget = tree_widget
 
         # Initialize setup
         self.__init_ui()
