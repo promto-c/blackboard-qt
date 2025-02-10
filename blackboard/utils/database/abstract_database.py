@@ -94,7 +94,7 @@ class AbstractDatabase(ABC):
         finally:
             cursor.close()
 
-    def query_raw(self, query: str, parameters: Optional[List[Any]] = None, as_dict: bool = True, is_single_field_query: bool = False):
+    def query_raw(self, query: str, parameters: Optional[List[Any]] = None, as_dict: bool = True, is_single_field: bool = False):
         """Execute a raw SQL query and yield results as dictionaries or tuples.
 
         Args:
@@ -116,7 +116,7 @@ class AbstractDatabase(ABC):
         try:
             if as_dict:
                 yield from map(dict, cursor)
-            elif is_single_field_query:
+            elif is_single_field:
                 yield from map(lambda x: x[0], cursor)
             else:
                 yield from map(tuple, cursor)
@@ -157,8 +157,8 @@ class AbstractDatabase(ABC):
         Yields:
             Tuple[Any, ...] | Dict[str, Any]: Each row from the query result.
         """
-        is_single_field_query = isinstance(fields, str)
-        if is_single_field_query:
+        is_single_field = isinstance(fields, str)
+        if is_single_field:
             fields = [fields]
 
         # Merge provided relationships with default relationships.
@@ -178,7 +178,7 @@ class AbstractDatabase(ABC):
 
         # No grouped (JSON) fields present: yield raw results.
         if not grouped_field_aliases:
-            yield from self.query_raw(query, parameters, as_dict, is_single_field_query)
+            yield from self.query_raw(query, parameters, as_dict, is_single_field)
         # Grouped fields are present.
         elif as_dict:
             yield from (
@@ -234,42 +234,6 @@ class AbstractDatabase(ABC):
             as_dict=as_dict,
         )
         return next(result_generator, None)
-
-    @staticmethod
-    def resolve_model_chain(base_model: str, relation_chain: str, relationships: Dict[str, str], sep: str = CHAIN_SEPARATOR) -> str:
-        """Resolve a chain of relationships to determine the final model.
-
-        Starting from a base model, this method iteratively follows the relationship chain defined by
-        the `relation_chain` string. At each step, it uses the `relationships` dictionary to map the current
-        model and field (formatted as "Model{sep}field") to a new model. If the chain is invalid or incomplete,
-        the function returns None.
-
-        Args:
-            base_model (str): The initial model from which to start the resolution.
-            relation_chain (str): A separator-delimited string representing the chain of relationships (e.g., "name.account").
-            relationships (Dict[str, str]): A dictionary mapping "Model{sep}field" to "RelatedModel{sep}related_field".
-            sep (str, optional): The separator used in both the relationship chain and the dictionary keys.
-                 Defaults to CHAIN_SEPARATOR.
-
-        Returns:
-            str: The final model reached after resolving the relationship chain. Returns None if the chain cannot be fully resolved.
-
-        Examples:
-            >>> relationships = {
-            ...     'User.name': 'Profile.id',
-            ...     'Profile.account': 'Account.id'
-            ... }
-            >>> AbstractDatabase.resolve_model_chain('User', 'name.account', relationships, sep='.')
-            'Account'
-            >>> AbstractDatabase.resolve_model_chain('User', 'name', relationships, sep='.')
-            'Profile'
-        """
-        for field in relation_chain.split(sep):
-            if (left_model_field := f'{base_model}{sep}{field}') not in relationships:
-                return
-            base_model, _right_field = relationships[left_model_field].split(sep)
-
-        return base_model
 
     def get_foreign_keys(self, model_name: str) -> Generator['ForeignKey', None, None]:
         """Retrieve foreign key constraints for the specified table.
@@ -370,9 +334,9 @@ class AbstractModel(ABC):
     def query_one(self, fields=None, conditions=None, relationships=None, values=None, order_by=None, as_dict=True):
         return next(self.query(fields=fields, conditions=conditions, relationships=relationships, values=values, order_by=order_by, as_dict=as_dict), None)
 
-    def resolve_model_chain(self, relation_chain: str, relationships: Dict[str, str] = None) -> str:
+    def resolve_model(self, relation_chain: str, relationships: Dict[str, str] = None) -> Tuple[str, str]:
         relationships = relationships or {}
-        return self._database.resolve_model_chain(self._name, relation_chain, self.get_relationships() | relationships)
+        return SQLQueryBuilder.resolve_model(self._name, relation_chain, self.get_relationships() | relationships)
 
     @property
     def name(self) -> str:

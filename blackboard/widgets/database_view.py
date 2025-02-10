@@ -715,31 +715,18 @@ class DatabaseViewWidget(DataViewWidget):
         if not self._base_model:
             return
 
-        # TODO: Store relation path in header item to be extract from item directly
-        # Check if the column header includes a related table
-        if '.' in field_chain:
-            parent_chain, local_field = field_chain.rsplit('.', 1)
-            local_model_name = self._base_model.resolve_model_chain(parent_chain)
-        else:
-            # Use the original current table
-            local_model_name = self._base_model.name
-            local_field = field_chain
-
-        relationships = self._database.get_relationships(local_model_name)
-        if (local_model_field := f'{local_model_name}.{local_field}') not in relationships:
+        # Retrieve related table model
+        related_model_name = self._base_model.resolve_model(field_chain)
+        if not related_model_name:
             return
 
-        related_model_name, _related_field = relationships[local_model_field].split('.')
-
-        # Retrieve fields from the related table
         related_model = self.db_manager.get_model(related_model_name)
 
         # Create a menu action for each foreign key relation
         for related_field in related_model.field_names[1:]:
-            relation_chain = f"{field_chain}.{related_field}"
-            action = self.add_relation_column_menu.addAction(relation_chain)
-            action.triggered.connect(
-                partial(self.add_field, relation_chain)
+            self.add_relation_column_menu.addAction(
+                related_field,
+                partial(self.add_field, f"{field_chain}.{related_field}")
             )
 
         self.add_relation_column_menu.setEnabled(True)

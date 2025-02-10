@@ -15,11 +15,59 @@ import json
 # -------------
 from blackboard.utils.database.abstract_database import AbstractDatabase, AbstractModel
 from blackboard.utils.database.schema import FieldInfo, ManyToManyField, ForeignKey
-from blackboard.utils.database.sql_query_builder import SQLQueryBuilder
+from blackboard.utils.database.sql_query_builder import SQLQueryBuilder, QueryContext
 
 
 # Class Definitions
 # -----------------
+class ContextAwareRow(sqlite3.Row):
+
+    cursor: 'ContextAwareCursor'
+
+    def __new__(cls, cursor: 'ContextAwareCursor', row: Tuple[Any, ...]) -> 'ContextAwareRow':
+        obj = super().__new__(cls, cursor, row)
+        obj.cursor = cursor
+        return obj
+
+    def __getitem__(self, key: str) -> Any:
+        # Get the original value.
+        value = super().__getitem__(key)
+
+        if not (context := self.cursor.context):
+            return value
+
+        if isinstance(key, int):
+            field_chain = context.get_field_by_index(key)
+        else:
+            field_chain = context.get_field_by_alias(key)
+        model_field_name = context.resolve_model_field(field_chain)
+
+        if field_chain in context.grouped_fields:
+            value = json.loads(value)
+
+        if model_field_name not in context.serializers:
+            return value
+
+        serializer = context.serializers[model_field_name]
+        if value in context.grouped_fields:
+            value = [serializer.deserialize(v) for v in value]
+        else:
+            value = serializer.deserialize(value)
+
+        return value
+
+
+class ContextAwareCursor(sqlite3.Cursor):
+
+    def __init__(self, connection: sqlite3.Connection, context: 'QueryContext' = None):
+        super().__init__(connection)
+        self.row_factory = ContextAwareRow
+        self.context = context
+
+    def set_query_context(self, context: 'QueryContext'):
+        self.context = context
+
+
 class SQLiteDatabase(AbstractDatabase):
 
     # Initialization and Setup
@@ -36,7 +84,6 @@ class SQLiteDatabase(AbstractDatabase):
         else:
             self._connection = sqlite3.connect(self._database, check_same_thread=check_same_thread)
         self._connection.row_factory = sqlite3.Row
-        self._cursor = self._connection.cursor()
 
     # Class Properties
     # ----------------
@@ -52,9 +99,8 @@ class SQLiteDatabase(AbstractDatabase):
         """
         return self._connection
 
-    @property
-    def cursor(self) -> sqlite3.Cursor:
-        return self._cursor
+    def cursor(self) -> 'ContextAwareCursor':
+        return ContextAwareCursor(self._connection)
 
     # Public Methods
     # --------------
@@ -170,7 +216,8 @@ class SQLiteDatabase(AbstractDatabase):
             for row in self.query_raw(f"PRAGMA foreign_key_list('{model_name}')")
         )
 
-    def query_raw(self, query: str, parameters: Optional[List[Any]] = None, as_dict: bool = True, is_single_field_query: bool = False):
+    def query_raw(self, query: str | QueryContext, parameters: Optional[List[Any]] = None,
+                  as_dict: bool = True, is_single_field: bool = False) -> Generator[Dict[str, Any] | Tuple[Any, ...], None, None]:
         """Execute a raw SQL query and yield results as dictionaries or tuples.
 
         Args:
@@ -183,7 +230,13 @@ class SQLiteDatabase(AbstractDatabase):
         Yields:
             Union[Dict[str, Any], Tuple[Any, ...]]: Each row from the query result.
         """
-        cursor = self._connection.cursor()
+        cursor = self.cursor()
+        if isinstance(query, QueryContext):
+            context = query
+            cursor.set_query_context(context)
+            query = context.query
+            parameters = context.parameters
+
         if parameters:
             cursor.execute(query, parameters)
         else:
@@ -192,7 +245,7 @@ class SQLiteDatabase(AbstractDatabase):
         try:
             if as_dict:
                 yield from map(dict, cursor)
-            elif is_single_field_query:
+            elif is_single_field:
                 yield from map(lambda x: x[0], cursor)
             else:
                 yield from map(tuple, cursor)
@@ -217,8 +270,8 @@ class SQLiteDatabase(AbstractDatabase):
         Yields:
             Tuple[Any, ...] | Dict[str, Any]: Each row from the query result.
         """
-        is_single_field_query = isinstance(fields, str)
-        if is_single_field_query:
+        is_single_field = isinstance(fields, str)
+        if is_single_field:
             fields = [fields]
 
         # Merge provided relationships with default relationships.
@@ -227,7 +280,7 @@ class SQLiteDatabase(AbstractDatabase):
         else:
             relationships = self.get_relationships(model_name)
 
-        query, parameters, grouped_field_aliases = SQLQueryBuilder.build_query(
+        context = SQLQueryBuilder.build_context(
             model=model_name,
             fields=fields,
             conditions=conditions,
@@ -236,26 +289,9 @@ class SQLiteDatabase(AbstractDatabase):
             limit=limit,
         )
 
-        # No grouped (JSON) fields present: yield raw results.
-        if not grouped_field_aliases:
-            yield from self.query_raw(query, parameters, as_dict, is_single_field_query)
-        # Grouped fields are present.
-        elif as_dict:
-            yield from (
-                {
-                    field: json.loads(value) if field in grouped_field_aliases else value
-                    for field, value in row.items()
-                }
-                for row in self.query_raw(query, parameters, as_dict=True)
-            )
-        else:
-            yield from (
-                tuple(
-                    json.loads(value) if field in grouped_field_aliases else value
-                    for field, value in row.items()
-                )
-                for row in self.query_raw(query, parameters, as_dict=True)
-            )
+        yield from self.query_raw(
+            query=context, as_dict=as_dict, is_single_field=is_single_field,
+        )
 
     def is_table_exists(self, table_name: str) -> bool:
         """Check if a table exists in the current database.
@@ -388,15 +424,6 @@ class SQLiteDatabase(AbstractDatabase):
             sqlite3.Error: If an error occurs while closing the cursor or connection.
         """
         try:
-            if self._cursor:
-                self._cursor.close()
-                self._cursor = None
-                print("Cursor closed successfully.")
-        except sqlite3.Error as e:
-            print(f"Error closing cursor: {e}")
-            raise
-
-        try:
             if self._connection:
                 self._connection.close()
                 self._connection = None
@@ -410,7 +437,6 @@ class SQLiteModel(AbstractModel):
         super().__init__(database=database, model_name=model_name)
 
         self._connection = self._database.connection
-        self._cursor = self._connection.cursor()
 
     def get_unique_fields(self) -> List[str]:
         """Retrieve the names of fields with unique constraints in a specified table.
@@ -432,8 +458,8 @@ class SQLiteModel(AbstractModel):
             # Skip if the index is not unique
             if not index['unique']:
                 continue  
-            for field in self._database.query_raw(f"PRAGMA index_info({index['name']})", as_dict=False):
-                unique_fields.append(field[2])
+            for field in self._database.query_raw(f"PRAGMA index_info({index['name']})"):
+                unique_fields.append(field['name'])
 
         return unique_fields
 
@@ -743,7 +769,7 @@ class SQLiteModel(AbstractModel):
         Returns:
             List[Dict[str, Union[int, str, float]]]: A list of dictionaries, each containing the 'id' from the original table and the corresponding list of related tags or other display fields.
         """
-        cursor = self._connection.cursor()
+        cursor = self._database.cursor()
 
         m2m = self.get_many_to_many_field(track_field_name)
 
@@ -868,7 +894,8 @@ class SQLiteModel(AbstractModel):
         fields = self.get_fields(self.name)
 
         # Disable foreign key constraints temporarily
-        self._cursor.execute("PRAGMA foreign_keys=off;")
+        cursor = self._database.cursor()
+        cursor.execute("PRAGMA foreign_keys=off;")
         try:
             # Filter out the field to be deleted
             new_fields = [field for field in fields.values() if field.name != field_name]
@@ -882,11 +909,11 @@ class SQLiteModel(AbstractModel):
 
             # Create a temporary table with the new schema
             temp_table_name = f"{self.name}_temp"
-            self._cursor.execute(f"CREATE TABLE {temp_table_name} ({field_definitions_str})")
-            self._cursor.execute(f"INSERT INTO {temp_table_name} ({field_names_str}) SELECT {field_names_str} FROM {self.name}")
+            cursor.execute(f"CREATE TABLE {temp_table_name} ({field_definitions_str})")
+            cursor.execute(f"INSERT INTO {temp_table_name} ({field_names_str}) SELECT {field_names_str} FROM {self.name}")
             # Replace the old table with the new one
-            self._cursor.execute(f"DROP TABLE {self.name}")
-            self._cursor.execute(f"ALTER TABLE {temp_table_name} RENAME TO {self.name}")
+            cursor.execute(f"DROP TABLE {self.name}")
+            cursor.execute(f"ALTER TABLE {temp_table_name} RENAME TO {self.name}")
 
             # Remove the display field metadata
             self._remove_display_field(field_name)
@@ -901,7 +928,7 @@ class SQLiteModel(AbstractModel):
 
         finally:
             # Re-enable foreign key constraints
-            self._cursor.execute("PRAGMA foreign_keys=on;")
+            cursor.execute("PRAGMA foreign_keys=on;")
 
     def insert_record(self, data_dict: Dict[str, Union[int, str, float, None]],
                       handle_m2m: bool = False) -> int:
@@ -934,11 +961,12 @@ class SQLiteModel(AbstractModel):
         field_names = ', '.join(data_dict.keys())
         placeholders = ', '.join(['?'] * len(data_dict))
         sql = f"INSERT INTO {self.name} ({field_names}) VALUES ({placeholders})"
-        self._cursor.execute(sql, list(data_dict.values()))
+        cursor = self._database.cursor()
+        cursor.execute(sql, list(data_dict.values()))
         self._connection.commit()
 
         # Get the primary key of the newly inserted record
-        rowid = self._cursor.lastrowid
+        rowid = cursor.lastrowid
 
         # Insert M2M data into the junction table(s) if handling M2M relationships
         if handle_m2m:
@@ -983,18 +1011,19 @@ class SQLiteModel(AbstractModel):
         # TODO: Handle composite pks
         # First, delete related data in the many-to-many junction tables
         m2m_fields = self.get_many_to_many_fields()
+        cursor = self._database.cursor()
         for m2m_field in m2m_fields.values():
             junction_table = m2m_field.junction_table
 
             # Delete related entries in the junction table
-            self._cursor.execute(f'''
+            cursor.execute(f'''
                 DELETE FROM {junction_table}
                 WHERE {m2m_field.local_fk.local_field} = ?
             ''', (list(pk_values.values())[0],))
 
         # Then, delete the main record from the table
         query = f"DELETE FROM {self.name} WHERE {where_clause}"
-        self._cursor.execute(query, where_values)
+        cursor.execute(query, where_values)
         self._connection.commit()
 
     # TODO: Handle composite pks
@@ -1106,6 +1135,7 @@ class SQLiteModel(AbstractModel):
             is_rowid (bool): Indicates if `from_value` is a rowid that needs to be translated into the corresponding foreign key value.
         """
         m2m = self.get_many_to_many_field(track_field_name)
+        cursor = self._database.cursor()
 
         if is_rowid:
             # Translate the rowid into the corresponding foreign key value
@@ -1117,14 +1147,14 @@ class SQLiteModel(AbstractModel):
             )
 
         # Clear existing junction table entries for this record
-        self._cursor.execute(f'''
+        cursor.execute(f'''
             DELETE FROM {m2m.junction_table}
             WHERE {m2m.local_fk.local_field} = ?
         ''', (from_value,))
 
         # Insert new entries into the junction table
         for value in selected_values:
-            self._cursor.execute(f'''
+            cursor.execute(f'''
                 INSERT INTO {m2m.junction_table} ({m2m.local_fk.local_field}, {m2m.related_fk.local_field})
                 VALUES (?, ?)
             ''', (from_value, value))
@@ -1169,12 +1199,11 @@ class Entity:
         self._id = entity_id
 
         self._model = self._database.get_model(model_name)
-        self._cursor = self._database.cursor
-    
+
     @property
     def database(self):
         return self._database
-    
+
     @property
     def model(self):
         return self._model
@@ -1182,16 +1211,16 @@ class Entity:
     @property
     def id(self):
         return self._id
-    
+
     def get_field_names(self) -> List[str]:
         return self._model.get_field_names()
-    
+
     def get(self, fields: List[str] | str = None, as_dict: bool = True):
         return self._model.query_one(
             fields=fields,
             conditions={'rowids': self._id},
             as_dict=as_dict
         )
-    
+
     def __getitem__(self, fields):
         return self.get(fields, as_dict=False)

@@ -986,6 +986,8 @@ class DateFilterWidget(FilterWidget):
     def format_label(self, values: List['datetime.date'] | 'datetime.date'):
         # Retrieve the format string based on the selected condition
         format_str = self.FORMATTER_MAPPING.get(self.selected_condition, self.selected_condition.display_name)
+        if not self.is_active:
+            text = ''
         if self.selected_condition.num_values > 1:
             values = [value.isoformat() for value in values]
             text = format_str.format(*values)

@@ -72,7 +72,7 @@ class FilterOperation(Enum):
         return self._sql_operator
 
     @property
-    def num_values(self) -> Optional[int]:
+    def num_values(self) -> int:
         """Return the number of values required for the filter operation.
         """
         return self._num_values
