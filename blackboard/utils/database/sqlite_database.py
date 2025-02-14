@@ -15,7 +15,7 @@ import json
 # -------------
 from blackboard.utils.database.abstract_database import AbstractDatabase, AbstractModel
 from blackboard.utils.database.schema import FieldInfo, ManyToManyField, ForeignKey
-from blackboard.utils.database.sql_query_builder import SQLQueryBuilder, QueryContext
+from blackboard.utils.database.sql_query_builder import SQLQueryBuilder, QueryContext, DataSerializer
 
 
 # Class Definitions
@@ -29,7 +29,7 @@ class ContextAwareRow(sqlite3.Row):
         obj.cursor = cursor
         return obj
 
-    def __getitem__(self, key: str) -> Any:
+    def __getitem__(self, key: str | int) -> Any:
         # Get the original value.
         value = super().__getitem__(key)
 
@@ -45,10 +45,10 @@ class ContextAwareRow(sqlite3.Row):
         if field_chain in context.grouped_fields:
             value = json.loads(value)
 
-        if model_field_name not in context.serializers:
+        serializer = context.serializers.get(model_field_name)
+        if not serializer:
             return value
 
-        serializer = context.serializers[model_field_name]
         if value in context.grouped_fields:
             value = [serializer.deserialize(v) for v in value]
         else:
@@ -83,7 +83,6 @@ class SQLiteDatabase(AbstractDatabase):
             self._connection = sqlite3.connect(f'file:///{self._database}?mode=ro' ,uri=True, check_same_thread=check_same_thread)
         else:
             self._connection = sqlite3.connect(self._database, check_same_thread=check_same_thread)
-        self._connection.row_factory = sqlite3.Row
 
     # Class Properties
     # ----------------
@@ -104,6 +103,20 @@ class SQLiteDatabase(AbstractDatabase):
 
     # Public Methods
     # --------------
+    def execute_raw(self, query: str, parameters: Optional[List[Any]] = None) -> sqlite3.Cursor:
+        """Execute a raw SQL query that modifies data (INSERT, UPDATE, DELETE).
+        """
+        cursor = self._connection.cursor()
+        try:
+            if parameters:
+                cursor.execute(query, parameters)
+            else:
+                cursor.execute(query)
+            self._connection.commit()
+            return cursor
+        finally:
+            cursor.close()
+
     def create_junction_table(self, from_table: str, to_table: str, from_field: str = 'id', to_field: str = 'id',
                               junction_table_name: Optional[str] = None, track_field_name: str = None, track_field_vice_versa_name: str = None,
                               from_display_field: Optional[str] = None, to_display_field: Optional[str] = None,
@@ -254,7 +267,8 @@ class SQLiteDatabase(AbstractDatabase):
 
     def query(self, model_name: str, fields: Optional[List[str]] = None, 
               conditions: Optional[Dict[Union['GroupOperator', str], Any]] = None,
-              relationships: Dict[str, str] = None, order_by: Optional[Dict[str, 'SortOrder']] = None, 
+              relationships: Dict[str, str] = None, order_by: Optional[Dict[str, 'SortOrder']] = None,
+              serializers: Optional[Dict[str, 'DataSerializer']] = None,
               limit: Optional[int] = None, as_dict: bool = True,
               ) -> Generator[Tuple[Any, ...] | Dict[str, Any], None, None]:
         """Retrieve data from a specified table as a generator.
@@ -280,11 +294,17 @@ class SQLiteDatabase(AbstractDatabase):
         else:
             relationships = self.get_relationships(model_name)
 
+        if serializers:
+            serializers = self.get_serializers(model_name) | serializers
+        else:
+            serializers = self.get_serializers(model_name)
+
         context = SQLQueryBuilder.build_context(
             model=model_name,
             fields=fields,
             conditions=conditions,
             relationships=relationships,
+            serializers=serializers,
             order_by=order_by,
             limit=limit,
         )
@@ -405,7 +425,7 @@ class SQLiteDatabase(AbstractDatabase):
             raise ValueError("Invalid table name or field name")
 
         return self.query_raw_one(
-            f"SELECT type FROM pragma_table_info(?) WHERE name = ?",
+            "SELECT type FROM pragma_table_info(?) WHERE name = ?",
             (table_name, field_name),
             as_dict=False
         )[0]

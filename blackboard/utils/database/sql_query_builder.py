@@ -51,7 +51,7 @@ class QueryContext:
 
     field_to_alias: Dict[str, str] = field(default_factory=dict)
     alias_to_field: Dict[str, str] = field(default_factory=dict)
-    grouped_fields: List[str] = field(default_factory=list)
+    grouped_fields: Set[str] = field(default_factory=set)
 
     def add_field_alias_pairs(self, pairs: List[Tuple[str, str]]):
         """Add field-alias pairs and maintain a reversible mapping.
@@ -180,6 +180,9 @@ class SQLQueryBuilder:
             >>> SQLQueryBuilder.resolve_model('User', 'name', relationships, sep='.')
             'Profile'
         """
+        if not relationships:
+            return
+
         for field in relation_chain.split(sep):
             if (left_model_field := f'{base_model}{sep}{field}') not in relationships:
                 return
@@ -189,20 +192,25 @@ class SQLQueryBuilder:
 
     @classmethod
     def resolve_model_field(cls, base_model: str, field_chain: str, relationships: Dict[str, str], sep: str = CHAIN_SEPARATOR, as_tuple: bool = False) -> str | Tuple[str, str]:
-        """Resolve a field to determine the final model.
+        """Constructs a fully-qualified model field identifier by resolving the field chain against a relationships map.
 
-        This method resolves a field to determine the final model it belongs to. It uses the `relationships`
-        dictionary to map the current model and field (formatted as "Model{sep}field") to a new model.
+        This method takes a starting model and a field chain (which may include relationship navigations using a separator)
+        and determines the final model associated with the target field. It does so by checking whether the field chain 
+        includes the separator:
+        
+        - If not, it assumes the field belongs directly to the base model.
+        - If it does, it parses the chain and recursively resolves the intermediate model relationships using the provided
+        `relationships` dictionary.
 
         Args:
-            base_model (str): The initial model from which to start the resolution.
-            field_chain (str): The field to resolve to a model.
-            relationships (Dict[str, str]): A dictionary mapping "Model{sep}field" to "RelatedModel{sep}related_field".
-            sep (str, optional): The separator used in both the relationship chain and the dictionary keys.
-                 Defaults to CHAIN_SEPARATOR.
+            base_model (str): The initial model name from which to begin resolution.
+            field_chain (str): The field or chain of fields to resolve (e.g., "name" or "name.account").
+            relationships (Dict[str, str]): A mapping where each key is in the format "Model{sep}field" and each value is
+                in the format "RelatedModel{sep}related_field". This defines how fields relate across models.
+            sep (str, optional): The separator used in the field chain and relationship keys. Defaults to CHAIN_SEPARATOR.
 
         Returns:
-            str: The final model reached after resolving the relationship chain. Returns None if the chain cannot be fully resolved.
+            str: A string representing the resolved model field in the format "FinalModel{sep}field". 
 
         Examples:
             >>> relationships = {
@@ -214,7 +222,7 @@ class SQLQueryBuilder:
             >>> SQLQueryBuilder.resolve_model_field('User', 'name.account', relationships)
             'Profile.account'
         """
-        if sep not in field_chain:
+        if sep not in field_chain or not relationships:
             model_name, field_name = base_model, field_chain
         else:
             parent_chain, field_name = cls._parse_relationship(field_chain, sep)
@@ -309,7 +317,7 @@ class SQLQueryBuilder:
             return f"{field_inner_alias} AS '{alias}'"
 
         # Convert input into a list of tuples: [(field, alias)]
-        if field_to_alias_pairs is None:
+        if not field_to_alias_pairs:
             return "*"
 
         # Handle both list of tuples (field, alias)
@@ -368,13 +376,13 @@ ON 'shot.sequence'.project = 'shot.sequence.project'.id\\nLEFT JOIN\\n\\tAssets 
             left_model_field = SQLQueryBuilder.resolve_model_field(base_model, chain, relationships)
 
             # `relationships` dict should map that to e.g. "Shots.id" => right_model_field
-            # which we then parse into e.g. right_model="Shots", right_column="id"
+            # which we then parse into e.g. right_model="Shots", right_field="id"
             right_model_field = relationships[left_model_field]
-            right_model, right_column = SQLQueryBuilder._parse_relationship(right_model_field, sep=sep)
+            right_model, right_field = SQLQueryBuilder._parse_relationship(right_model_field, sep=sep)
 
             # On the left side, we might need to reference the base model or a previous alias
             right_table_alias = f"'{chain}'"
-            right_field_alias = f'{right_table_alias}.{right_column}'
+            right_field_alias = f'{right_table_alias}{sep}{right_field}'
 
             # Build the LEFT JOIN snippet
             if right_model_field in relationships:
@@ -383,7 +391,7 @@ ON 'shot.sequence'.project = 'shot.sequence.project'.id\\nLEFT JOIN\\n\\tAssets 
                 _, b = SQLQueryBuilder._parse_relationship(relationships[right_model_field], sep=sep)
                 left_field_alias = f'{a}{sep}{b}'
             else:
-                left_field_alias = SQLQueryBuilder._build_inner_alias(chain)
+                left_field_alias = SQLQueryBuilder._build_inner_alias(chain, sep=sep)
 
             # Store the discovered right_model in relation_chain_to_table, so future children
             # of this chain know which table they come from.
@@ -403,6 +411,7 @@ ON 'shot.sequence'.project = 'shot.sequence.project'.id\\nLEFT JOIN\\n\\tAssets 
     def build_where_clause(base_model: str,
                            conditions: Dict[Union[GroupOperator, str], Any], 
                            group_operator: Union[GroupOperator, str] = GroupOperator.AND,
+                           relationships: Optional[Dict[str, str]] = None,
                            serializers: Optional[Dict[str, 'DataSerializer']] = None,
                            ) -> Tuple[str, Set[str], List[Any]]:
         """Build the WHERE clause of the query.
@@ -458,18 +467,18 @@ ON 'shot.sequence'.project = 'shot.sequence.project'.id\\nLEFT JOIN\\n\\tAssets 
             ... })
             ('(_.age < ? OR (_.status = ? AND _.id >= ?))', {'id', 'age', 'status'}, [18, 'inactive', 100])
         """
+        if not conditions:
+            return None, None, None
+
         where_clauses = []
         parameters = []
         fields = set()
-
-        if not conditions:
-            return None, None, None
 
         for key, value in SQLQueryBuilder._extract_key_value_pairs(conditions):
             # Handle group operators by recursively building sub-clauses.
             if isinstance(key, GroupOperator) or GroupOperator.is_valid(key):
                 sub_where_clause, sub_fields, sub_parameters = SQLQueryBuilder.build_where_clause(
-                    base_model, value, group_operator=key, serializers=serializers
+                    base_model, value, group_operator=key, relationships=relationships, serializers=serializers
                 )
                 where_clauses.append(f"({sub_where_clause})")
                 fields.update(sub_fields)
@@ -606,7 +615,7 @@ ON 'shot.sequence'.project = 'shot.sequence.project'.id\\nLEFT JOIN\\n\\tAssets 
         group_by_clause = ', '.join(grouped_fields)
 
         select_clause = SQLQueryBuilder.build_select_clause(field_to_alias_pairs, grouped_fields)
-        where_clause, where_fields, parameters = SQLQueryBuilder.build_where_clause(model, conditions, serializers=serializers)
+        where_clause, where_fields, parameters = SQLQueryBuilder.build_where_clause(model, conditions, relationships=relationships, serializers=serializers)
         fields = list(fields or []) + list(where_fields or [])
         join_clause = SQLQueryBuilder.build_join_clause(model, fields, relationships)
         order_by_clause = SQLQueryBuilder.build_order_by_clause(order_by)
@@ -628,7 +637,7 @@ ON 'shot.sequence'.project = 'shot.sequence.project'.id\\nLEFT JOIN\\n\\tAssets 
 
         query_clauses_str = '\n'.join(query_clauses)
 
-        context = QueryContext(model=model, query=query_clauses_str, parameters=parameters, relationships=relationships)
+        context = QueryContext(model=model, query=query_clauses_str, parameters=parameters, relationships=relationships, serializers=serializers, grouped_fields=grouped_fields)
         context.add_field_alias_pairs(field_to_alias_pairs)
 
         return context

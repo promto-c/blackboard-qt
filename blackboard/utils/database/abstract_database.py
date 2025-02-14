@@ -20,8 +20,6 @@ from blackboard.utils.database.sql_query_builder import SQLQueryBuilder
 # -----------------
 class AbstractDatabase(ABC):
 
-    CHAIN_SEPARATOR = '.'
-
     @abstractmethod
     def create_table(self, table_name: str, fields: Dict[str, str]) -> 'AbstractModel':
         """Create a table in the database."""
@@ -84,15 +82,9 @@ class AbstractDatabase(ABC):
         """Close the database connection."""
         pass
 
-    def execute_raw(self, query: str, parameters: Optional[List[Any]] = None) -> int:
+    def execute_raw(self, query: str, parameters: Optional[List[Any]] = None):
         """Execute a raw SQL query that modifies data (INSERT, UPDATE, DELETE)."""
-        cursor = self._connection.cursor()
-        try:
-            cursor.execute(query, parameters)
-            self._connection.commit()
-            return cursor.rowcount
-        finally:
-            cursor.close()
+        pass
 
     def query_raw(self, query: str, parameters: Optional[List[Any]] = None, as_dict: bool = True, is_single_field: bool = False):
         """Execute a raw SQL query and yield results as dictionaries or tuples.
@@ -291,6 +283,10 @@ class AbstractDatabase(ABC):
         construct_relationships(model_name)
 
         return relationships
+    
+    # TODO: Implement this method.
+    def get_serializers(self, model_name: str) -> Dict[str, str]:
+        return {}
 
 
 class AbstractModel(ABC):
