@@ -64,9 +64,9 @@ class QueryContext:
                                            the field name and the second is the alias.
 
         Example:
-            >>> result = QueryContext(query="SELECT id FROM tasks", parameters=[])
+            >>> result = QueryContext(model="tasks", query="SELECT id FROM tasks", parameters=[])
             >>> result.add_field_alias_pairs([("tasks.id", "task_id"), ("tasks.name", "task_name")])
-            >>> print(result.field_aliases)
+            >>> print(result.field_to_alias)
             {'tasks.id': 'task_id', 'tasks.name': 'task_name'}
             >>> print(result.alias_to_field)
             {'task_id': 'tasks.id', 'task_name': 'tasks.name'}
@@ -115,12 +115,13 @@ class QueryContext:
 
         Example:
             >>> relationships = {
-            ...     'User.name': 'Profile.id',
-            ...     'Profile.account': 'Account.id'
+            ...     'Tasks.name': 'Users.id',
+            ...     'Users.profile': 'Profiles.id',
+            ...     'Profiles.account': 'Accounts.id'
             ... }
-            >>> result = QueryContext(query="SELECT id FROM tasks", parameters=[], relationships=relationships)
-            >>> result.resolve_model('name.account', sep='.')
-            'Account'
+            >>> result = QueryContext(model='Tasks', query="SELECT id FROM Tasks", parameters=[], relationships=relationships)
+            >>> result.resolve_model('name.profile.account')
+            'Accounts'
         """
         return SQLQueryBuilder.resolve_model(self.model, relation_chain, self.relationships)
     
@@ -311,7 +312,7 @@ class SQLQueryBuilder:
         """
         def _build(field, alias):
             field_inner_alias = SQLQueryBuilder._build_inner_alias(field)
-            if field in grouped_fields:
+            if grouped_fields and field in grouped_fields:
                 field_inner_alias = f"JSON_GROUP_ARRAY({field_inner_alias})"
 
             return f"{field_inner_alias} AS '{alias}'"
@@ -355,9 +356,9 @@ class SQLQueryBuilder:
             ...         "Assets.task": "Tasks.id",
             ...     }
             ... )
-            "LEFT JOIN\\n\\tShots AS 'shot' ON _.shot = 'shot'.id\\nLEFT JOIN\\n\\tSequences AS 'shot.sequence' \
-ON 'shot'.sequence = 'shot.sequence'.id\\nLEFT JOIN\\n\\tProjects AS 'shot.sequence.project' \
-ON 'shot.sequence'.project = 'shot.sequence.project'.id\\nLEFT JOIN\\n\\tAssets AS 'assets' ON _.id = 'assets'.task"
+            "LEFT JOIN\\n\\tAssets AS 'assets' ON _.id = 'assets'.task\\nLEFT JOIN\\n\\tShots AS 'shot' ON _.shot = 'shot'.id\\n\
+LEFT JOIN\\n\\tSequences AS 'shot.sequence' ON 'shot'.sequence = 'shot.sequence'.id\\n\
+LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 'shot.sequence.project'.id"
         """
         # 1) Gather all chain prefixes that need to be joined up to (but not including) the final leaf
         #    For example, "shot.sequence" is taken from "shot.sequence.project.name"
@@ -408,8 +409,8 @@ ON 'shot.sequence'.project = 'shot.sequence.project'.id\\nLEFT JOIN\\n\\tAssets 
         return '\n'.join(join_clauses)
 
     @staticmethod
-    def build_where_clause(base_model: str,
-                           conditions: Dict[Union[GroupOperator, str], Any], 
+    def build_where_clause(base_model: str = None,
+                           conditions: Dict[Union[GroupOperator, str], Any] = None, 
                            group_operator: Union[GroupOperator, str] = GroupOperator.AND,
                            relationships: Optional[Dict[str, str]] = None,
                            serializers: Optional[Dict[str, 'DataSerializer']] = None,
@@ -417,46 +418,55 @@ ON 'shot.sequence'.project = 'shot.sequence.project'.id\\nLEFT JOIN\\n\\tAssets 
         """Build the WHERE clause of the query.
 
         Examples:
-            >>> SQLQueryBuilder.build_where_clause({"name": "John"})
-            ('_.name = ?', ['John'])
+            >>> SQLQueryBuilder.build_where_clause(conditions={"name": "John"})
+            ('_.name = ?', {'name'}, ['John'])
 
-            >>> SQLQueryBuilder.build_where_clause({
+            >>> where_clauses, fields, parameters = SQLQueryBuilder.build_where_clause(conditions={
             ...     "age": {"gte": 18},
             ...     "name": {"contains": "John"}
             ... })
+            >>> where_clauses, parameters
             ("_.age >= ? AND _.name LIKE '%' || ? || '%'", [18, 'John'])
+            >>> fields == {'name', 'age'}
+            True
 
-            >>> SQLQueryBuilder.build_where_clause({
+            >>> SQLQueryBuilder.build_where_clause(conditions={
             ...     "status": {"in": ["active", "pending", "suspended"]}
             ... })
-            ('_.status IN (?, ?, ?)', ['active', 'pending', 'suspended'])
+            ('_.status IN (?, ?, ?)', {'status'}, ['active', 'pending', 'suspended'])
 
-            >>> SQLQueryBuilder.build_where_clause({
+            >>> SQLQueryBuilder.build_where_clause(conditions={
             ...     "status": {"not_in": ["inactive", "deleted"]}
             ... })
-            ('_.status NOT IN (?, ?)', ['inactive', 'deleted'])
+            ('_.status NOT IN (?, ?)', {'status'}, ['inactive', 'deleted'])
 
-            >>> SQLQueryBuilder.build_where_clause({
+            >>> where_clauses, fields, parameters = SQLQueryBuilder.build_where_clause(conditions={
             ...     "age": {"lt": 25},
             ...     "name": {"contains": "John"}
             ... })
+            >>> where_clauses, parameters
             ("_.age < ? AND _.name LIKE '%' || ? || '%'", [25, 'John'])
+            >>> fields == {'name', 'age'}
+            True
 
-            >>> SQLQueryBuilder.build_where_clause({
+            >>> SQLQueryBuilder.build_where_clause(conditions={
             ...     "id": 123
             ... })
-            ('_.id = ?', [123])
+            ('_.id = ?', {'id'}, [123])
 
-            >>> SQLQueryBuilder.build_where_clause({
+            >>> where_clauses, fields, parameters = SQLQueryBuilder.build_where_clause(conditions={
             ...    "OR": {
             ...        "shot.sequence.project.name": {"contains": "Forest"},
             ...        "shot.status": {"eq": "Completed"},
             ...        "assigned_to.role": {"eq": "Artist"}
             ...    }
             ... })
+            >>> where_clauses, parameters
             ("('shot.sequence.project'.name LIKE '%' || ? || '%' OR 'shot'.status = ? OR 'assigned_to'.role = ?)", ['Forest', 'Completed', 'Artist'])
+            >>> fields == {'shot.sequence.project.name', 'assigned_to.role', 'shot.status'}
+            True
 
-            >>> SQLQueryBuilder.build_where_clause({
+            >>> where_clauses, fields, parameters = SQLQueryBuilder.build_where_clause(conditions={
             ...     "OR": {
             ...         "age": {"lt": 18},
             ...         "AND": {
@@ -465,7 +475,10 @@ ON 'shot.sequence'.project = 'shot.sequence.project'.id\\nLEFT JOIN\\n\\tAssets 
             ...         }
             ...     }
             ... })
-            ('(_.age < ? OR (_.status = ? AND _.id >= ?))', {'id', 'age', 'status'}, [18, 'inactive', 100])
+            >>> where_clauses, parameters
+            ('(_.age < ? OR (_.status = ? AND _.id >= ?))', [18, 'inactive', 100])
+            >>> fields == {'id', 'age', 'status'}
+            True
         """
         if not conditions:
             return None, None, None
@@ -539,13 +552,13 @@ ON 'shot.sequence'.project = 'shot.sequence.project'.id\\nLEFT JOIN\\n\\tAssets 
         ...     "shot.name": SortOrder.DESC,
         ...     "name": SortOrder.ASC
         ... })
-        "ORDER BY\\n\\t'shot'.name DESC, _.name ASC"
+        "'shot'.name DESC, _.name ASC"
         
         >>> SQLQueryBuilder.build_order_by_clause({
         ...     "shot.name": "desc",
         ...     "name": "asc"
         ... })
-        "ORDER BY\\n\\t'shot'.name DESC, _.name ASC"
+        "'shot'.name DESC, _.name ASC"
         """
         if not order_by:
             return
@@ -561,7 +574,7 @@ ON 'shot.sequence'.project = 'shot.sequence.project'.id\\nLEFT JOIN\\n\\tAssets 
     @staticmethod
     def build_context(model: str, fields = None, conditions = None, relationships = None,
                       order_by: Optional[Dict[str, SortOrder]] = None, limit: int = None,
-                      serializers: Optional[Dict[str, 'DataSerializer']] = None,
+                      serializers: Optional[Dict[str, 'DataSerializer']] = None, distinct: bool = False,
                       ) -> 'QueryContext':
         """Constructs a SQL query dynamically based on the given parameters.
 
@@ -576,6 +589,7 @@ ON 'shot.sequence'.project = 'shot.sequence.project'.id\\nLEFT JOIN\\n\\tAssets 
             relationships (Optional[Dict[str, str]]): A dictionary defining relationships between models.
             order_by (Optional[Dict[str, SortOrder]]): A dictionary specifying sorting order for fields.
             limit (Optional[int]): The maximum number of records to retrieve.
+            distinct (Optional[bool]): Whether to add the DISTINCT keyword to the SELECT clause.
 
         Returns:
             QueryContext: An instance of QueryContext.
@@ -587,11 +601,12 @@ ON 'shot.sequence'.project = 'shot.sequence.project'.id\\nLEFT JOIN\\n\\tAssets 
             ...     conditions={"status": "active"},
             ...     relationships={"Tasks.assigned_to": "Users.id"},
             ...     order_by={"created_at": "DESC"},
-            ...     limit=10
+            ...     limit=10,
+            ...     distinct=True
             ... )
-            ... context.query
-            "SELECT\\n\\tid, name, status\\nFROM\\n\\t'Tasks' AS _\\nWHERE\\n\\tstatus = ?\\nORDER BY\\n\\tcreated_at DESC\\nLIMIT\\n\\t10",
-            ... context.parameters
+            >>> context.query
+            "SELECT DISTINCT\\n\\t_.id AS 'id',\\n\\t_.name AS 'name',\\n\\t_.status AS 'status'\\nFROM\\n\\t'Tasks' AS _\\nWHERE\\n\\t_.status = ?\\nORDER BY\\n\\t_.created_at DESC\\nLIMIT\\n\\t10"
+            >>> context.parameters
             ['active']
 
             >>> context = SQLQueryBuilder.build_context(
@@ -600,9 +615,9 @@ ON 'shot.sequence'.project = 'shot.sequence.project'.id\\nLEFT JOIN\\n\\tAssets 
             ...     conditions={"role": "admin"},
             ...     limit=5
             ... )
-            ... context.query
-            "SELECT\\n\\tid, email\\nFROM\\n\\t'Users' AS _\\nWHERE\\n\\trole = ?\\nLIMIT\\n\\t5",
-            ... context.parameters
+            >>> context.query
+            "SELECT\\n\\t_.id AS 'id',\\n\\t_.email AS 'email'\\nFROM\\n\\t'Users' AS _\\nWHERE\\n\\t_.role = ?\\nLIMIT\\n\\t5"
+            >>> context.parameters
             ['admin']
         """
         # NOTE: Handle indirect relational fields, such as one-to-many relationships.
@@ -621,7 +636,7 @@ ON 'shot.sequence'.project = 'shot.sequence.project'.id\\nLEFT JOIN\\n\\tAssets 
         order_by_clause = SQLQueryBuilder.build_order_by_clause(order_by)
 
         query_clauses = [
-            f"SELECT\n\t{select_clause}",
+            f"SELECT{' DISTINCT' if distinct else ''}\n\t{select_clause}",
             f"FROM\n\t'{model}' AS _",
         ]
         if join_clause:

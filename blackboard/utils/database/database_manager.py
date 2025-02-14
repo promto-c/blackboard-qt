@@ -10,8 +10,8 @@ import sqlite3
 
 # Local Imports
 # -------------
-from .sqlite_database import SQLiteDatabase
-from .schema import RelationChain
+from blackboard.utils.database.sqlite_database import SQLiteDatabase
+from blackboard.utils.database.schema import RelationChain
 
 
 # Class Definitions
@@ -19,7 +19,6 @@ from .schema import RelationChain
 # NOTE: WIP
 class DatabaseManager:
 
-    FIELD_TYPES = ["INTEGER", "REAL", "TEXT", "BLOB", "NULL", "DATETIME", "ENUM"]
     PRIMARY_KEY_TYPES = ["INTEGER", "TEXT"]
 
     DB_TYPE_TO_DATABASE = {
@@ -39,7 +38,6 @@ class DatabaseManager:
 
         self.database = self.DB_TYPE_TO_DATABASE.get(db_type)(db_name)
         self.connection = self.database.connection
-        self.cursor = self.database.cursor
 
     # Table Manager
     # -------------
@@ -142,24 +140,28 @@ class DatabaseManager:
         Returns:
             List[str]: A list of table names that match the 'enum_%' pattern.
         """
-        self.database.cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'enum_%'")
-        return [row[0] for row in self.cursor.fetchall()]
+        return list(self.database.query(
+            model_name='sqlite_master',
+            fields='name',
+            conditions={
+                'type': 'table',
+                'name': {'startswith': 'enum_'},
+            },
+            as_dict=False,
+        ))
 
     def get_enum_table_name(self, table_name: str, field_name: str) -> Optional[str]:
         """Retrieve the name of the enum table associated with a given field.
         """
-        try:
-            self.database.cursor.execute('''
-                SELECT enum_table_name FROM _meta_enum_field
-                WHERE table_name = ? AND field_name = ?;
-            ''', (table_name, field_name))
-        except sqlite3.OperationalError:
-            pass
-
-        if not (results := self.database.cursor.fetchone()):
-            return
-
-        return results[0]
+        return self.database.query_one(
+            model_name='_meta_enum_field',
+            fields='enum_table_name',
+            conditions={
+                'table_name': table_name,
+                'field_name': field_name
+            },
+            as_dict=False,
+        )
 
     def get_enum_values(self, enum_table_name: str) -> List[str]:
         """Retrieve all values from an enum table.
@@ -174,7 +176,7 @@ class DatabaseManager:
             sqlite3.Error: If there is an error executing the SQL command.
         """
         enum_model = self.get_model(enum_table_name)
-        return enum_model.get_possible_values('value')
+        return list(enum_model.query('value', distinct=True, as_dict=False))
 
     def create_enum_table(self, table_name: str, values: List[str]):
         """Create a table to store enum values.
@@ -189,95 +191,11 @@ class DatabaseManager:
         if not table_name.isidentifier():
             raise ValueError("Invalid enum name")
 
-        self.database.cursor.execute(f"CREATE TABLE IF NOT EXISTS {table_name} (id INTEGER PRIMARY KEY AUTOINCREMENT, value TEXT UNIQUE)")
+        cursor = self.database.cursor()
+        cursor.execute(f"CREATE TABLE IF NOT EXISTS {table_name} (id INTEGER PRIMARY KEY AUTOINCREMENT, value TEXT UNIQUE)")
 
         # Insert enum values
         for value in values:
-            self.database.cursor.execute(f"INSERT OR IGNORE INTO {table_name} (value) VALUES (?)", (value,))
+            cursor.execute(f"INSERT OR IGNORE INTO {table_name} (value) VALUES (?)", (value,))
 
         self.connection.commit()
-
-# NOTE: WIP
-class ViewModel:
-    """A class that constructs and executes SQL queries based on specified tables, fields, and relationships."""
-    def __init__(self, db_manager: 'DatabaseManager'):
-        self._db_manager = db_manager
-        self._database = db_manager._database
-        self._connection = self._database.connection
-        self._table_name = ''
-        self._selected_fields = []
-        self._relation_chains = []
-        self._join_tables = set()
-        self._aliases = {}
-        self._alias_counter = 1
-
-    def set_table(self, table_name: str):
-        """Set the base table for the query."""
-        if not table_name.isidentifier():
-            raise ValueError("Invalid table name")
-        self._table_name = table_name
-
-    def set_fields(self, field_list: List[str]):
-        """Set the fields to select from the base table."""
-        if not all(field.isidentifier() for field in field_list):
-            raise ValueError("Invalid field name in field list")
-        self._selected_fields.extend(field_list)
-
-    def add_relation_field(self, field_chain: str):
-        """Add a related field to select, specifying the chain of relationships."""
-        # Parse the relation chain using RelationChain class
-        relation_chain = RelationChain.parse(field_chain, self._db_manager)
-        self._relation_chains.append(relation_chain)
-        # Cache join tables
-        for step in relation_chain.steps:
-            self._join_tables.add((step.local_table, step.foreign_key, step.related_table, step.related_field))
-        # Add the select fields
-        self._selected_fields.extend(relation_chain.select_fields)
-
-    def prepare_query(self) -> str:
-        """Prepare the SQL query based on the set table, fields, and relationships."""
-        if not self._table_name:
-            raise ValueError("Table name is not set.")
-        # Start building the query
-        query = f"SELECT "
-        fields = []
-        # Add fields from the base table
-        for field in self._selected_fields:
-            if '.' not in field:
-                fields.append(f"{self._table_name}.{field}")
-            else:
-                # If field is already qualified, use it as is
-                fields.append(field)
-        query += ', '.join(fields)
-        query += f" FROM {self._table_name} AS {self._table_name}"
-        # Add JOINs
-        join_clauses = []
-        for relation_chain in self._relation_chains:
-            current_table = self._table_name
-            current_alias = self._aliases.get(current_table, current_table)
-            for step in relation_chain.steps:
-                # Generate an alias for the referenced table if not already aliased
-                if step.related_table not in self._aliases:
-                    alias = f"{step.related_table}_alias{self._alias_counter}"
-                    self._alias_counter += 1
-                    self._aliases[step.related_table] = alias
-                else:
-                    alias = self._aliases[step.related_table]
-                # Build the JOIN clause
-                join_clause = f" LEFT JOIN {step.related_table} AS {alias} ON {current_alias}.{step.foreign_key} = {alias}.{step.related_field}"
-                join_clauses.append(join_clause)
-                # Update current table and alias
-                current_alias = alias
-                current_table = step.related_table
-        # Append the JOIN clauses to the query
-        query += ' '.join(join_clauses)
-        return query
-
-    def execute(self):
-        """Execute the prepared query and return the results."""
-        query = self.prepare_query()
-        cursor = self._database.connection.cursor()
-        cursor.execute(query)
-        results = cursor.fetchall()
-        cursor.close()
-        return results

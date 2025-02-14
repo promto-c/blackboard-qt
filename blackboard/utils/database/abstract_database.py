@@ -13,7 +13,7 @@ import json
 
 # Local Imports
 # -------------
-from blackboard.utils.database.sql_query_builder import SQLQueryBuilder
+from blackboard.utils.database.sql_query_builder import SQLQueryBuilder, DataSerializer
 
 
 # Class Definitions
@@ -303,11 +303,15 @@ class AbstractModel(ABC):
         """
         self._database = database
         self._name = model_name
-
-    def query(self, fields: Optional[List[str]] = None, 
+    def query(self, fields: Optional[List[str]] = None,
+              *,
               conditions: Optional[Dict[Union['GroupOperator', str], Any]] = None,
-              relationships: Dict[str, str] = None, order_by: Optional[Dict[str, 'SortOrder']] = None, 
-              limit: Optional[int] = None, as_dict: bool = True,
+              order_by: Optional[Dict[str, 'SortOrder']] = None,
+              relationships: Optional[Dict[str, str]] = None,
+              serializers: Optional[Dict[str, 'DataSerializer']] = None,
+              limit: Optional[int] = None,
+              distinct: bool = False,
+              as_dict: bool = True,
               ) -> Generator[Tuple[Any, ...] | Dict[str, Any], None, None]:
         """Retrieve data from a specified table as a generator.
 
@@ -317,14 +321,16 @@ class AbstractModel(ABC):
             relationships (Optional[Dict[str, str]]): Relationship mappings.
             order_by (Optional[Dict[str, SortOrder]]): Fields and sort order.
             limit (Optional[int]): Maximum number of rows to retrieve.
+            distinct (bool): If True, return only distinct rows.
             as_dict (bool): If True, yield rows as dictionaries; if False, as tuples.
 
         Yields:
             Tuple[Any, ...] | Dict[str, Any]: Each row from the query result.
         """
         yield from self._database.query(
-            model_name=self._name, fields=fields, conditions=conditions, relationships=relationships,
-            order_by=order_by, limit=limit, as_dict=as_dict
+            model_name=self._name, fields=fields,
+            conditions=conditions, relationships=relationships, serializers=serializers,
+            order_by=order_by, limit=limit, distinct=distinct, as_dict=as_dict
         )
 
     def query_one(self, fields=None, conditions=None, relationships=None, values=None, order_by=None, as_dict=True):

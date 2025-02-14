@@ -784,7 +784,7 @@ class DatabaseViewWidget(DataViewWidget):
     def show_add_record_dialog(self):
         """Show the dialog to add a new record to the current table.
         """
-        if not self._current_table:
+        if not self._base_model:
             return
 
         dialog = AddEditRecordDialog(self.db_manager, self._base_model)
@@ -866,7 +866,7 @@ class DatabaseViewWidget(DataViewWidget):
             # TODO: Handle the column based on its type if it is not TEXT
             # Fetch possible values from the related table
             related_model = self.db_manager.get_model(related_table)
-            possible_values = related_model.get_possible_values(display_field)
+            possible_values = list(related_model.query(display_field, distinct=True, as_dict=False))
 
             # Create a MultiSelectFilterWidget with the possible values
             filter_widget = MultiSelectFilterWidget(filter_name=column_name)

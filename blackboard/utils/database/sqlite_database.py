@@ -265,11 +265,15 @@ class SQLiteDatabase(AbstractDatabase):
         finally:
             cursor.close()
 
-    def query(self, model_name: str, fields: Optional[List[str]] = None, 
+    def query(self, model_name: str, fields: Optional[List[str]] = None,
+              *,
               conditions: Optional[Dict[Union['GroupOperator', str], Any]] = None,
-              relationships: Dict[str, str] = None, order_by: Optional[Dict[str, 'SortOrder']] = None,
+              order_by: Optional[Dict[str, 'SortOrder']] = None,
+              relationships: Optional[Dict[str, str]] = None,
               serializers: Optional[Dict[str, 'DataSerializer']] = None,
-              limit: Optional[int] = None, as_dict: bool = True,
+              limit: Optional[int] = None,
+              distinct: bool = False,
+              as_dict: bool = True,
               ) -> Generator[Tuple[Any, ...] | Dict[str, Any], None, None]:
         """Retrieve data from a specified table as a generator.
 
@@ -307,6 +311,7 @@ class SQLiteDatabase(AbstractDatabase):
             serializers=serializers,
             order_by=order_by,
             limit=limit,
+            distinct=distinct,
         )
 
         yield from self.query_raw(
@@ -789,8 +794,6 @@ class SQLiteModel(AbstractModel):
         Returns:
             List[Dict[str, Union[int, str, float]]]: A list of dictionaries, each containing the 'id' from the original table and the corresponding list of related tags or other display fields.
         """
-        cursor = self._database.cursor()
-
         m2m = self.get_many_to_many_field(track_field_name)
 
         # Use the provided display field or fall back to the related field
@@ -798,18 +801,18 @@ class SQLiteModel(AbstractModel):
 
         # If no specific from_values were provided, retrieve them from the junction table.
         if from_values is None:
-            cursor.execute(f'''
-                SELECT DISTINCT {m2m.local_fk.local_field}
-                FROM {m2m.junction_table}
-            ''')
-            from_values = [row[0] for row in cursor.fetchall()]
+            from_values = list(self._database.query(
+                model_name=m2m.junction_table,
+                fields=m2m.local_fk.local_field,
+                distinct=True, as_dict=False,
+            ))
 
         # Cast the local field to the appropriate key type.
         key_type = self.get_field_type(m2m.local_fk.related_field)
 
         # Build placeholders for the SQL IN clause.
         placeholders = ', '.join('?' for _ in from_values)
-        
+
         # Use JSON_GROUP_ARRAY instead of GROUP_CONCAT.
         query = f'''
             SELECT CAST({m2m.junction_table}.{m2m.local_fk.local_field} AS {key_type}) AS {m2m.local_fk.related_field},
@@ -820,7 +823,7 @@ class SQLiteModel(AbstractModel):
             WHERE {m2m.junction_table}.{m2m.local_fk.local_field} IN ({placeholders})
             GROUP BY {m2m.junction_table}.{m2m.local_fk.local_field}
         '''
-
+        cursor = self._database.cursor()
         cursor.execute(query, from_values)
         results = cursor.fetchall()
         cursor.close()
@@ -1085,27 +1088,6 @@ class SQLiteModel(AbstractModel):
         if handle_m2m:
             for track_field_name, selected_values in m2m_data.items():
                 self._update_junction_table(track_field_name, pk_value, selected_values)
-
-    def get_possible_values(self, field: Optional[str] = None) -> List[str]:
-        """Get possible values from a related table using a display field.
-
-        Args:
-            table_name (str): The name of the related table.
-            field (Optional[str]): The field to display. Defaults to the primary key.
-
-        Returns:
-            List[str]: A list of possible values from the specified display field.
-        """
-        # Determine the display field: use the provided display field or default to the primary key
-        field = field or self.get_primary_keys()[0]
-
-        # Ensure the display field exists in the table
-        if field not in self.get_field_names():
-            raise ValueError(f"Field '{field}' does not exist in table '{self.name}'")
-
-        # Execute query to get the unique values for the display field
-        rows = self._database.query_raw(f"SELECT DISTINCT {field} FROM {self.name} ORDER BY {field}")
-        return [row[0] for row in rows]
 
     def add_display_field(self, field_name: str, display_field_name: str, display_format: str = None):
         """Add a display field entry to the meta table.
