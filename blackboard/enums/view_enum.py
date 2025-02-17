@@ -91,7 +91,19 @@ class FilterOperation(Enum):
 
     @classmethod
     def from_string(cls, name: str) -> 'FilterOperation':
-        return cls[name.upper()]
+        name = name.upper()
+        mapping = {
+            "<": cls.LT,
+            ">": cls.GT,
+            "<=": cls.LTE,
+            ">=": cls.GTE,
+            "EQUALS": cls.EQ,
+            "=": cls.EQ,
+            "NOT_EQUALS": cls.NEQ,
+            "!=": cls.NEQ,
+        }
+
+        return mapping.get(name, cls[name])
 
     def __str__(self):
         """Return the string representation of the filter operation.
