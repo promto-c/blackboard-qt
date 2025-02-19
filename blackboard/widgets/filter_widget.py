@@ -259,7 +259,9 @@ class FilterSelectionBar(QtWidgets.QToolBar):
         super().paintEvent(event)
         self._move_ext_button()
 
+
 # TODO: Add support to set column name mapping to filter widget
+# TODO: Add support to get as dict or serialize for save/load view state
 class FilterBarWidget(QtWidgets.QWidget):
 
     filter_changed = QtCore.Signal()
@@ -930,7 +932,7 @@ class DateFilterWidget(FilterWidget):
     def _update_selection_mode(self, index):
         """Update the selection mode based on the selected condition.
         """
-        if self.selected_condition.num_values == 1:
+        if self.selected_condition.num_params == 1:
             self.calendar.set_selection_mode(CalendarSelectionMode.SINGLE)
         else:
             self.calendar.set_selection_mode(CalendarSelectionMode.RANGE)
@@ -976,9 +978,9 @@ class DateFilterWidget(FilterWidget):
         py_start_date = self.start_date.toPyDate() if self.start_date else None
         py_end_date = self.end_date.toPyDate() if self.end_date else py_start_date
 
-        if self.selected_condition.num_values == 2:
+        if self.selected_condition.num_params == 2:
             return [py_start_date, py_end_date]
-        elif self.selected_condition.num_values == 1:
+        elif self.selected_condition.num_params == 1:
             return py_start_date or py_end_date
         else:
             return
@@ -988,7 +990,7 @@ class DateFilterWidget(FilterWidget):
         format_str = self.FORMATTER_MAPPING.get(self.selected_condition, self.selected_condition.display_name)
         if not self.is_active:
             text = ''
-        if self.selected_condition.num_values > 1:
+        if self.selected_condition.num_params > 1:
             values = [value.isoformat() for value in values]
             text = format_str.format(*values)
         else:
@@ -1155,7 +1157,7 @@ class TextFilterWidget(FilterWidget):
         self.save_state('text', self.text_edit.text())
 
     def get_value(self):
-        if not self.selected_condition.requires_value():
+        if not self.selected_condition.requires_param():
             return
         
         return self.text_edit.text()
@@ -1171,7 +1173,7 @@ class TextFilterWidget(FilterWidget):
         """Update UI components based on the selected condition.
         """
         # If the condition is 'Is Null' or 'Is Not Null', hide the text input
-        if not self.selected_condition.requires_value():
+        if not self.selected_condition.requires_param():
             self.text_edit.hide()
         else:
             self.text_edit.show()
@@ -1179,18 +1181,17 @@ class TextFilterWidget(FilterWidget):
     def format_label(self, value: str) -> str:
         """Format the display label based on current inputs.
         """
-        if not self.selected_condition.requires_value():
+        if not self.selected_condition.requires_param():
             text = self.selected_condition.display_name
-        elif value:
+        else:
             text = f"{self.selected_condition.display_name}: {value}"
-        text = self.selected_condition.display_name
 
         return super().format_label(text)
 
     def check_validity(self):
         """Check if the filter is active based on current values.
         """
-        return self.selected_condition.requires_value() or bool(self.text_edit.text())
+        return not self.selected_condition.requires_param() or bool(self.text_edit.text())
 
 class FilterEntryEdit(QtWidgets.QLineEdit):
     def __init__(self, parent=None):
@@ -1787,17 +1788,17 @@ class NumericFilterWidget(FilterWidget):
         self.save_state('upper_value', self.upper_value_edit.text())
 
     def get_value(self) -> Optional[Tuple[float, ...]]:
-        if not self.selected_condition.requires_value():
+        if not self.selected_condition.requires_param():
             return
         lower_value = self.lower_value_edit.text()
         upper_value = self.upper_value_edit.text()
 
-        if self.selected_condition.num_values == 2:
+        if self.selected_condition.num_params == 2:
             if lower_value and upper_value:
                 return sorted([float(lower_value), float(upper_value)])
             else:
                 return
-        elif self.selected_condition.num_values == 1:
+        elif self.selected_condition.num_params == 1:
             value = lower_value or upper_value
             if value:
                 return float(value)
@@ -1855,7 +1856,7 @@ class NumericFilterWidget(FilterWidget):
         """
         # Retrieve the format string based on the selected condition
         format_str = self.FORMATTER_MAPPING.get(self.selected_condition, self.selected_condition.display_name)
-        if self.selected_condition.is_multi_value():
+        if self.selected_condition.is_multi_param():
             text = format_str.format(*values)
         else:
             text = format_str.format(values)
@@ -1866,7 +1867,7 @@ class NumericFilterWidget(FilterWidget):
     def check_validity(self):
         """Check if the filter is active based on current values.
         """
-        return self.selected_condition.requires_value() or bool(self.lower_value_edit.text() or self.upper_value_edit.text())
+        return self.selected_condition.requires_param() or bool(self.lower_value_edit.text() or self.upper_value_edit.text())
 
 
 class BooleanFilterWidget(FilterWidget):
@@ -1925,7 +1926,7 @@ class BooleanFilterWidget(FilterWidget):
     
     def on_condition_changed(self):
         # When condition is EQ or NEQ, show the boolean value widget; otherwise, hide it.
-        if self.selected_condition.requires_value():
+        if self.selected_condition.requires_param():
             self.value_widget.show()
         else:
             self.value_widget.hide()
@@ -1948,7 +1949,7 @@ class BooleanFilterWidget(FilterWidget):
         """Save the current state of the filter settings."""
         super().save_change()
         # Save the boolean value only if the condition requires it.
-        if self.selected_condition.requires_value():
+        if self.selected_condition.requires_param():
             # The button group's checked id: 1 for True, 0 for False.
             selected_bool = bool(self.boolean_group.checkedId())
             self.save_state('value', selected_bool)
@@ -1957,7 +1958,7 @@ class BooleanFilterWidget(FilterWidget):
 
     def format_label(self, _values=None):
         # Format a label based on the condition and (if applicable) the boolean value.
-        if self.selected_condition.requires_value():
+        if self.selected_condition.requires_param():
             selected_bool = "True" if self.boolean_group.checkedId() == 1 else "False"
             label_text = f"{self.display_name}: {self.selected_condition.display_name} {selected_bool}"
         else:

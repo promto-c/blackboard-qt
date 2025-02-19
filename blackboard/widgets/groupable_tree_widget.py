@@ -57,9 +57,9 @@ class TreeWidgetItem(QtWidgets.QTreeWidgetItem):
             item_values = item_data
         elif isinstance(item_data, dict):
             # Retrieve column names from the parent widget
-            column_names = TreeUtil.get_column_names(parent)
+            fields = TreeUtil.get_field_names(parent)
             # Match data to columns
-            item_values = [item_data.get(column, '') for column in column_names]
+            item_values = [item_data.get(field, '') for field in fields]
 
         # Call superclass constructor to initialize the item with formatted data
         super().__init__(parent, map(self._convert_to_str, item_values))
@@ -447,7 +447,16 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
     # ------------------------
     def __init__(self, parent: QtWidgets.QWidget = None, *args, **kwargs):
         # Call the parent class constructor
-        super().__init__(parent, uniformRowHeights=True, *args, **kwargs)
+        super().__init__(
+            parent, uniformRowHeights=True,
+            dragDropMode=QtWidgets.QAbstractItemView.DragDropMode.DragOnly,
+            contextMenuPolicy=QtCore.Qt.ContextMenuPolicy.CustomContextMenu,
+            selectionMode=QtWidgets.QTreeWidget.SelectionMode.ExtendedSelection,
+            selectionBehavior=QtWidgets.QTreeWidget.SelectionBehavior.SelectItems,
+            sortingEnabled=True,
+            wordWrap=True,
+            *args, **kwargs,
+        )
 
         # Initialize setup
         self.__init_attributes()
@@ -459,15 +468,13 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         """
         # Attributes
         # ----------
-        # Store the current grouped column name
-        self.fields: List[str] = []
-        self.color_adaptive_fields: List[int] = []
+        # Field lists for grouping and adaptive styling.
+        self._fields: List[str] = []
+        self.color_adaptive_fields: List[str] = []
         self.grouped_fields: List[str] = []
 
-        # Initialize FetchManager
+        # Managers and delegates for data and UI handling.
         self.fetch_manager = FetchManager(self)
-
-        # Initialize the HighlightItemDelegate object to highlight items in the tree widget
         self.highlight_item_delegate = widgets.HighlightItemDelegate()
         self.thumbnail_delegate = widgets.ThumbnailDelegate(self)
 
@@ -476,27 +483,16 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         self._primary_key = None
         self._row_height = self.DEFAULT_ROW_HEIGHT
         self._selected_field = 0
-
         self._id_to_tree_item: Dict[Any, QtWidgets.QTreeWidgetItem] = {}
 
     def __init_ui(self):
         """Initialize the UI of the widget.
         """
-        self.sortByColumn(1, QtCore.Qt.SortOrder.AscendingOrder)
-        self.setDragDropMode(QtWidgets.QAbstractItemView.DragDropMode.DragOnly)
+        # Reset sorting
+        self.sortByColumn(-1, QtCore.Qt.SortOrder.AscendingOrder)
 
         # Set up the context menu
         self.header().setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
-        self.header().setStretchLastSection(True)
-        self.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
-
-        # Enable sorting in the tree widget
-        self.setSortingEnabled(True)
-        self.setWordWrap(True)
-
-        # Enable ExtendedSelection mode for multi-select and set the selection behavior to SelectItems
-        self.setSelectionMode(QtWidgets.QTreeWidget.SelectionMode.ExtendedSelection)
-        self.setSelectionBehavior(QtWidgets.QTreeWidget.SelectionBehavior.SelectItems)
 
         # Set the item delegate for highlight search item
         self.setItemDelegate(self.highlight_item_delegate)
@@ -520,8 +516,8 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         # Connect signal of header
         self.header().customContextMenuRequested.connect(self._show_header_context_menu)
 
-        self.itemExpanded.connect(self.toggle_expansion_for_selected)
-        self.itemCollapsed.connect(self.toggle_expansion_for_selected)
+        self.itemExpanded.connect(self._toggle_expansion_for_selected)
+        self.itemCollapsed.connect(self._toggle_expansion_for_selected)
         self.itemSelectionChanged.connect(self._highlight_selected_items)
 
         self.highlight_item_delegate.highlight_changed.connect(self.update)
@@ -537,82 +533,6 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         # Create a shortcut for the copy action and connect its activated signal
         bb.utils.KeyBinder.bind_key(QtGui.QKeySequence.StandardKey.Copy, self, self.copy_selected_cells)
 
-    # Private Methods
-    # ---------------
-    def _create_header_menu(self):
-        """Create a context menu for the header of the tree widget.
-
-        Context Menu:
-            +-------------------------------+
-            | Grouping                      | - [0]
-            | - Group by this column        |
-            | - Ungroup all                 |
-            | ----------------------------- |
-            | Visualization                 | - [1]
-            | - Set Color Adaptive          |
-            | - Reset All Color Adaptive    |
-            | ----------------------------- |
-            | - Fit in View                 |
-            | ----------------------------- |
-            | Manage Columns                | - [2]
-            | - Show/Hide Columns >         |
-            | - Hide This Column            |
-            +-------------------------------+
-        """
-        # Create the context menu
-        self.header_menu = ContextMenu()
-
-        # [0] - Add 'Grouping' section with actions: 'Group by this column' and 'Ungroup all'
-        grouping_section_action = self.header_menu.addSection('Grouping')
-        self.group_by_action = grouping_section_action.addAction(text='Group by this column')
-        ungroup_all_action = grouping_section_action.addAction(text='Ungroup all')
-        # [1] - Add 'Visualization' section with actions: 'Set Color Adaptive', 'Reset All Color Adaptive', and 'Fit in View'
-        visualization_section_action = self.header_menu.addSection('Visualization')
-        apply_color_adaptive_action = visualization_section_action.addAction(text='Set Color Adaptive')
-        reset_all_color_adaptive_action = visualization_section_action.addAction(text='Reset All Color Adaptive')
-        visualization_section_action.addSeparator()
-        fit_column_in_view_action = visualization_section_action.addAction(text='Fit in View')
-        # [2] - Add 'Manage Columns' section with actions for column management
-        manage_columns_section_action = self.header_menu.addSection('Manage Columns')
-        show_hide_column_menu = manage_columns_section_action.addMenu('Show/Hide Columns')
-        self.column_management_widget = ColumnManagementWidget(self)
-        column_management_widget_action = QtWidgets.QWidgetAction(self)
-        column_management_widget_action.setDefaultWidget(self.column_management_widget)
-        show_hide_column_menu.addAction(column_management_widget_action)
-        hide_this_column = manage_columns_section_action.addAction(text='Hide This Column')
-
-        # Connect actions to their corresponding methods
-        self.group_by_action.triggered.connect(lambda: self.group_by(self._selected_field))
-        ungroup_all_action.triggered.connect(self.ungroup_all)
-        apply_color_adaptive_action.triggered.connect(lambda: self.apply_color_adaptive(self._selected_field))
-        reset_all_color_adaptive_action.triggered.connect(self.clear_color_adaptive)
-        fit_column_in_view_action.triggered.connect(self.fit_column_in_view)
-        hide_this_column.triggered.connect(lambda: self.hideColumn(self._selected_field))
-
-    def _show_header_context_menu(self, pos: QtCore.QPoint):
-        """Show a context menu for the header of the tree widget.
-
-        Args:
-            pos (QtCore.QPoint): The position where the right-click occurred.
-        """
-        # Get the index of the column where the right click occurred
-        self._selected_field = self.fields[self.header().logicalIndexAt(pos)]
-
-        # Emit the custom signal with the column index
-        self.about_to_show_header_menu.emit(self._selected_field)
-
-        # Disable 'Group by this column' on grouped column
-        if self._selected_field in self.grouped_fields:
-            self.group_by_action.setEnabled(False)
-
-        # Show the context menu
-        self.header_menu.popup(QtGui.QCursor.pos())
-
-    def _highlight_selected_items(self):
-        """Highlight the specified `tree_items` in the tree widget.
-        """
-        self.highlight_item_delegate.set_selected_items(self.selectedItems())
-
     # Public Methods
     # --------------
     def create_thumbnail_column(self, source_column_name: str = 'file_path', sequence_range_column_name: str = 'sequence_range'):
@@ -622,13 +542,13 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
             source_column_name (str): The name of the source column. Defaults to 'file_path'.
             sequence_range_column_name (str): The name of the sequence range column. Defaults to 'sequence_range'.
         """
-        if 'thumbnail' not in self.fields:
-            self.fields.append('thumbnail')
-        self.setHeaderLabels(self.fields)
+        if 'thumbnail' not in self._fields:
+            self._fields.append('thumbnail')
+        self.setHeaderLabels(self._fields)
 
-        source_column = self.fields.index(source_column_name)
-        thumbnail_column = self.fields.index('thumbnail')
-        sequence_range_column = self.fields.index(sequence_range_column_name) if sequence_range_column_name in self.fields else None
+        source_column = self._fields.index(source_column_name)
+        thumbnail_column = self._fields.index('thumbnail')
+        sequence_range_column = self._fields.index(sequence_range_column_name) if sequence_range_column_name in self._fields else None
 
         self.thumbnail_delegate.set_thumbnail_column(thumbnail_column)
         self.thumbnail_delegate.set_source_column(source_column)
@@ -646,7 +566,7 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         self.highlight_item_delegate.add_highlight_items(tree_items, focused_column_index)
 
     def clear_highlight(self):
-        """Reset the highlight for all items.
+        """Clear highlights from all items.
         """
         self.highlight_item_delegate.clear_highlight_items()
 
@@ -666,23 +586,6 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
             }}
         """)
 
-    def toggle_expansion_for_selected(self, reference_item: QtWidgets.QTreeWidgetItem):
-        """Toggle the expansion state of selected items.
-
-        Args:
-            reference_item (QtWidgets.QTreeWidgetItem): The clicked item whose expansion state will be used as a reference.
-        """
-        # Get the currently selected items
-        selected_items = self.selectedItems()
-
-        # If no items are selected, return early
-        if not selected_items:
-            return
-
-        # Set the expanded state of all selected items to match the expanded state of the clicked item
-        for i in selected_items:
-            i.setExpanded(reference_item.isExpanded())
-
     # TODO: Move out
     def get_column_value_range(self, column: int, child_level: int = 0) -> Tuple[Optional['Number'], Optional['Number']]:
         """Get the value range of a specific column at a given child level.
@@ -696,7 +599,7 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
             or (None, None) if no valid values are found.
         """
         # Get the items at the specified child level
-        items = TreeUtil.get_child_items(self, target_depth=child_level)
+        items = TreeUtil.get_items(self, target_depth=child_level)
 
         # Collect the values from the specified column in the items
         try:
@@ -723,6 +626,7 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         # Return the value range
         return min_value, max_value
 
+    # TODO: Handle by field type
     def apply_color_adaptive(self, field: str):
         """Apply adaptive color mapping to a specific column at the appropriate child level determined by the group column.
 
@@ -766,7 +670,7 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         self.setItemDelegateForColumn(self.get_column_index(field), None)
 
     def clear_color_adaptive(self):
-        """Reset the color adaptive for all columns in the tree widget.
+        """Clear the color adaptive for all columns in the tree widget.
         """
         for field in self.color_adaptive_fields:
             self.setItemDelegateForColumn(self.get_column_index(field), None)
@@ -782,7 +686,7 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         Returns:
             Optional[int]: The index of the column if found, otherwise None.
         """
-        return self.fields.index(column_name) if column_name in self.fields else None
+        return self._fields.index(column_name) if column_name in self._fields else None
 
     def get_column_visual_index(self, column: Union[str, int]) -> int:
         """Retrieve the visual index of the specified column.
@@ -809,19 +713,16 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         """
         return self.header().logicalIndex(visual_index)
 
-    def add_items(self, item_names: Union[Dict[str, List[str]], List[str]], parent: Optional[QtWidgets.QTreeWidgetItem] = None):
-        """Add items to the tree widget.
+    # TODO: Handle id or primary key
+    def add_items(self, data_dicts: List[Dict[str, Any]], parent: Optional[QtWidgets.QTreeWidgetItem] = None):
+        """Add multiple items to the tree widget.
 
         Args:
-            item_names (Union[Dict[str, List[str]], List[str]]): If a dictionary is provided, it represents parent-child relationships where keys are parent item names and values are lists of child item names. If a list is provided, it contains item names to be added at the root level.
-            parent (Optional[QtWidgets.QTreeWidgetItem]): The parent item. Defaults to None.
+            data_dicts (List[Dict[str, Any]]): A list of data dictionaries to add.
+            parent (Optional[QtWidgets.QTreeWidgetItem]): The parent item. If None, items are added at the root level.
         """
-        if isinstance(item_names, dict):
-            self._add_items_from_id_to_data_dict(item_names, parent)
-        elif isinstance(item_names, list):
-            self._add_items_from_data_dicts(item_names, parent)
-        else:
-            raise ValueError("Invalid type for item_names. Expected a list or a dictionary.")
+        for data_dict in data_dicts:
+            self.add_item(data_dict, parent=parent)
 
     def add_item(self, data_dict: Dict[str, Any], item_id: Optional[Union[str, Tuple[str, ...]]] = None, parent: Optional[QtWidgets.QTreeWidgetItem] = None) -> TreeWidgetItem:
         """Add an item to the tree widget, considering groupings if applicable.
@@ -871,29 +772,6 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
 
         return tree_item
 
-    def _add_items_from_id_to_data_dict(self, id_to_data_dict: Dict[str, Dict[str, Any]], parent: Optional[QtWidgets.QTreeWidgetItem]):
-        """Add items to the tree widget.
-
-        Args:
-            id_to_data_dict (Dict[str, Dict[str, Any]]): A dictionary mapping item IDs to their data as a dictionary.
-            parent (Optional[QtWidgets.QTreeWidgetItem]): The parent item. Defaults to None.
-        """
-        # Iterate through the dictionary of items
-        for item_id, data_dict in id_to_data_dict.items():
-            # Create a new custom QTreeWidgetItem for sorting by type of the item data, and add to the self tree widget
-            self.add_item(data_dict, item_id, parent)
-
-    # TODO: Handle id or primary key
-    def _add_items_from_data_dicts(self, data_dicts: List[Dict[str, Any]], parent: Optional[QtWidgets.QTreeWidgetItem] = None):
-        """Add items to the tree widget at the root level from a list of data dictionaries.
-
-        Args:
-            data_dicts (List[Dict[str, Any]]): A list of data dictionaries to be added at the root level.
-            parent (Optional[QtWidgets.QTreeWidgetItem]): The parent item. Defaults to None.
-        """
-        for data_dict in data_dicts:
-            self.add_item(data_dict, parent=parent)
-
     def get_item_by_id(self, item_id: Any) -> Optional[TreeWidgetItem]:
         return self._id_to_tree_item.get(item_id)
 
@@ -941,7 +819,7 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
 
         # Update the item data
         for key, value in data_dict.items():
-            if key not in self.fields:
+            if key not in self._fields:
                 continue
             tree_item.set_value(key, value)
 
@@ -968,7 +846,7 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
             parent_item.child_grouped_dict = {}
             self.group_items(parent_item, column)
         else:
-            lowest_grouped_items = TreeUtil.get_child_items(self, target_depth=len(self.grouped_fields) - 1)
+            lowest_grouped_items = TreeUtil.get_items(self, target_depth=len(self.grouped_fields) - 1)
             for lowest_grouped_item in lowest_grouped_items:
                 self.group_items(lowest_grouped_item, column)
 
@@ -977,7 +855,7 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         self.grouped_fields.append(grouped_field_name)
 
         # Store original and rename the first column
-        first_column_name = self.fields[0]
+        first_column_name = self._fields[0]
         self.headerItem().setData(0, QtCore.Qt.ItemDataRole.UserRole, first_column_name)
         grouped_column_names_str = ' / '.join(self.grouped_fields + [first_column_name])
         self.setHeaderLabel(grouped_column_names_str)
@@ -1009,30 +887,8 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
             parent_item.child_grouped_dict[grouped_name] = grouped_item
             grouped_item.addChildren(items)
 
-    def _create_item_groups(self, items: List[QtWidgets.QTreeWidgetItem], column: int) -> Dict[str, List[QtWidgets.QTreeWidgetItem]]:
-        """Group the data into a dictionary mapping group names to lists of tree items.
-
-        Args:
-            items (List[QtWidgets.QTreeWidgetItem]): The data to be grouped.
-            column (int):
-
-        Returns:
-            Dict[str, List[QtWidgets.QTreeWidgetItem]]: A dictionary mapping group names to lists of tree items.
-        """
-        # Create a defaultdict to store the groups
-        group_name_to_tree_items = defaultdict(list)
-
-        for item in items:
-            key_data = item.data(column, QtCore.Qt.ItemDataRole.UserRole) or '_others'
-            group_name_to_tree_items[key_data].append(item)
-
-        return group_name_to_tree_items
-
     def fit_column_in_view(self):
         """Adjust the width of all columns to fit the entire view.
-    
-        This method resizes columns so that their sum is equal to the width of the view minus the width of the vertical scroll bar. 
-        It starts by reducing the width of the column with the largest width by 10% until all columns fit within the expected width.
         """
         TreeUtil.fit_column_in_view(self)
 
@@ -1044,7 +900,7 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
             return
 
         # Reset the header label
-        self.setHeaderLabel(self.fields[0])
+        self.setHeaderLabel(self._fields[0])
         
         # Show hidden column
         for grouped_field_name in self.grouped_fields:
@@ -1052,7 +908,7 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
             self.setColumnHidden(column_index, False)
 
         # Get target items at a specific child level
-        target_items = TreeUtil.get_child_items(self, target_depth=len(self.grouped_fields))
+        target_items = TreeUtil.get_items(self, target_depth=len(self.grouped_fields))
 
         # Reparent to root and remove the empty grouped items
         TreeItemUtil.remove_items(target_items)
@@ -1073,7 +929,7 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         """
         # Get selected indexes from the view
         selected_indexes = self.selectedIndexes()
-        all_items = TreeUtil.get_child_items(self)
+        all_items = TreeUtil.get_items(self)
 
         # Sort the cells based on their global row and column
         sorted_indexes = sorted(
@@ -1148,7 +1004,7 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
     def set_fields(self, fields: Iterable[str]):
         self.setHeaderLabels(fields)
 
-    def save_state(self, settings: QtCore.QSettings, group_name='tree_widget'):
+    def save_state(self, settings: QtCore.QSettings, group_name: str = 'tree_widget'):
         """Save the state of the tree widget.
 
         Args:
@@ -1158,11 +1014,11 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         settings.beginGroup(group_name)
         settings.setValue('header_state', self.header().saveState())
         settings.setValue('color_adaptive_fields', self.color_adaptive_fields)
-        settings.setValue('group_column_names', self.grouped_fields)
+        settings.setValue('grouped_fields', self.grouped_fields)
         settings.setValue('uniform_row_height', self._row_height)
         settings.endGroup()
 
-    def load_state(self, settings: QtCore.QSettings, group_name='tree_widget'):
+    def load_state(self, settings: QtCore.QSettings, group_name: str = 'tree_widget'):
         """Load the state of the tree widget.
 
         Args:
@@ -1198,10 +1054,128 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         if is_fetch_all:
             self.fetch_manager.fetch_all()
         else:
-            first_batch_size = self.calculate_dynamic_batch_size()
+            first_batch_size = self._calculate_dynamic_batch_size()
             self.fetch_manager.fetch(first_batch_size)
 
-    def calculate_dynamic_batch_size(self) -> int:
+    # Class Properties
+    # ----------------
+    @property
+    def fields(self) -> List[str]:
+        return self._fields
+
+    # Private Methods
+    # ---------------
+    def _create_header_menu(self):
+        """Create a context menu for the header of the tree widget.
+
+        Context Menu:
+            +-------------------------------+
+            | Grouping                      | - [0]
+            | - Group by this column        |
+            | - Ungroup all                 |
+            | ----------------------------- |
+            | Visualization                 | - [1]
+            | - Set Color Adaptive          |
+            | - Reset All Color Adaptive    |
+            | ----------------------------- |
+            | - Fit in View                 |
+            | ----------------------------- |
+            | Manage Columns                | - [2]
+            | - Show/Hide Columns >         |
+            | - Hide This Column            |
+            +-------------------------------+
+        """
+        # Create the context menu
+        self.header_menu = ContextMenu()
+
+        # [0] - Add 'Grouping' section with actions: 'Group by this column' and 'Ungroup all'
+        grouping_section_action = self.header_menu.addSection('Grouping')
+        self.group_by_action = grouping_section_action.addAction(text='Group by this column')
+        ungroup_all_action = grouping_section_action.addAction(text='Ungroup all')
+        # [1] - Add 'Visualization' section with actions: 'Set Color Adaptive', 'Reset All Color Adaptive', and 'Fit in View'
+        visualization_section_action = self.header_menu.addSection('Visualization')
+        apply_color_adaptive_action = visualization_section_action.addAction(text='Set Color Adaptive')
+        reset_all_color_adaptive_action = visualization_section_action.addAction(text='Reset All Color Adaptive')
+        visualization_section_action.addSeparator()
+        fit_column_in_view_action = visualization_section_action.addAction(text='Fit in View')
+        # [2] - Add 'Manage Columns' section with actions for column management
+        manage_columns_section_action = self.header_menu.addSection('Manage Columns')
+        show_hide_column_menu = manage_columns_section_action.addMenu('Show/Hide Columns')
+        self.column_management_widget = ColumnManagementWidget(self)
+        column_management_widget_action = QtWidgets.QWidgetAction(self)
+        column_management_widget_action.setDefaultWidget(self.column_management_widget)
+        show_hide_column_menu.addAction(column_management_widget_action)
+        hide_this_column = manage_columns_section_action.addAction(text='Hide This Column')
+
+        # Connect actions to their corresponding methods
+        self.group_by_action.triggered.connect(lambda: self.group_by(self._selected_field))
+        ungroup_all_action.triggered.connect(self.ungroup_all)
+        apply_color_adaptive_action.triggered.connect(lambda: self.apply_color_adaptive(self._selected_field))
+        reset_all_color_adaptive_action.triggered.connect(self.clear_color_adaptive)
+        fit_column_in_view_action.triggered.connect(self.fit_column_in_view)
+        hide_this_column.triggered.connect(lambda: self.hideColumn(self._selected_field))
+
+    def _show_header_context_menu(self, pos: QtCore.QPoint):
+        """Show a context menu for the header of the tree widget.
+
+        Args:
+            pos (QtCore.QPoint): The position where the right-click occurred.
+        """
+        # Get the index of the column where the right click occurred
+        self._selected_field = self._fields[self.header().logicalIndexAt(pos)]
+
+        # Emit the custom signal with the column index
+        self.about_to_show_header_menu.emit(self._selected_field)
+
+        # Disable 'Group by this column' on grouped column
+        if self._selected_field in self.grouped_fields:
+            self.group_by_action.setEnabled(False)
+
+        # Show the context menu
+        self.header_menu.popup(QtGui.QCursor.pos())
+
+    def _create_item_groups(self, items: List[QtWidgets.QTreeWidgetItem], column: int) -> Dict[str, List[QtWidgets.QTreeWidgetItem]]:
+        """Group the data into a dictionary mapping group names to lists of tree items.
+
+        Args:
+            items (List[QtWidgets.QTreeWidgetItem]): The data to be grouped.
+            column (int):
+
+        Returns:
+            Dict[str, List[QtWidgets.QTreeWidgetItem]]: A dictionary mapping group names to lists of tree items.
+        """
+        # Create a defaultdict to store the groups
+        group_name_to_tree_items = defaultdict(list)
+
+        for item in items:
+            key_data = item.data(column, QtCore.Qt.ItemDataRole.UserRole) or '_others'
+            group_name_to_tree_items[key_data].append(item)
+
+        return group_name_to_tree_items
+
+    def _highlight_selected_items(self):
+        """Highlight the specified `tree_items` in the tree widget.
+        """
+        self.highlight_item_delegate.set_selected_items(self.selectedItems())
+
+    def _toggle_expansion_for_selected(self, reference_item: QtWidgets.QTreeWidgetItem):
+        """Toggle the expansion state of selected items.
+
+        Args:
+            reference_item (QtWidgets.QTreeWidgetItem): The clicked item whose expansion state will be used as a reference.
+        """
+        # Get the currently selected items
+        selected_items = self.selectedItems()
+
+        # If no items are selected, return early
+        if not selected_items:
+            return
+
+        # Set the expanded state of all selected items to match the expanded state of the clicked item
+        for i in selected_items:
+            i.setExpanded(reference_item.isExpanded())
+
+    def _calculate_dynamic_batch_size(self) -> int:
         """Estimate the number of items that can fit in the current view.
 
         Returns:
@@ -1225,7 +1199,7 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         if value >= self.verticalScrollBar().maximum() - self.fetch_manager.THRESHOLD_TO_FETCH_MORE:
             self.fetch_manager.fetch_more()
 
-    def _restore_color_adaptive_fields(self, fields: List[int]):
+    def _restore_color_adaptive_fields(self, fields: List[str]):
         """Restore the color adaptive columns.
 
         Args:
@@ -1245,11 +1219,11 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
             labels (Iterable[str]): The iterable of column names to be set.
         """
         # Store the column names for later use
-        self.fields = list(labels)
+        self._fields = list(labels)
 
         # Set the number of columns and the column labels
-        self.setColumnCount(len(self.fields))
-        super().setHeaderLabels(self.fields)
+        self.setColumnCount(len(self._fields))
+        super().setHeaderLabels(self._fields)
         self.field_changed.emit()
 
     def hideColumn(self, column: Union[int, str]):

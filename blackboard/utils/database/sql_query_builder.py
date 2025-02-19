@@ -508,7 +508,7 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
             if not isinstance(operator, FilterOperation):
                 operator = FilterOperation.from_string(operator)
 
-            if operator.is_multi_value():
+            if operator.is_multi_param():
                 if not isinstance(value, Iterable) or isinstance(value, (str, bytes)):
                     raise ValueError(
                         f"For '{operator}' operation, value should be an iterable (but not a string or bytes)"
@@ -529,12 +529,12 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
                 serializer = None
 
             # Process the value(s) with a serializer if provided.
-            if operator.is_multi_value() or operator.num_values > 1:
+            if operator.is_multi_param() or operator.num_params > 1:
                 if serializer:
                     parameters.extend([serializer.serialize(v) for v in value])
                 else:
                     parameters.extend(value)
-            elif operator.requires_value():
+            elif operator.requires_param():
                 if serializer:
                     parameters.append(serializer.serialize(value))
                 else:
@@ -547,18 +547,25 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
     @staticmethod
     def build_order_by_clause(order_by: Dict[str, SortOrder]) -> str:
         """Build the ORDER BY clause of the query.
-        
-        >>> SQLQueryBuilder.build_order_by_clause({
-        ...     "shot.name": SortOrder.DESC,
-        ...     "name": SortOrder.ASC
-        ... })
-        "'shot'.name DESC, _.name ASC"
-        
-        >>> SQLQueryBuilder.build_order_by_clause({
-        ...     "shot.name": "desc",
-        ...     "name": "asc"
-        ... })
-        "'shot'.name DESC, _.name ASC"
+
+        Args:
+            order_by (Dict[str, SortOrder]): A dictionary specifying the fields to sort by and the sort order.
+
+        Returns:
+            str: The ORDER BY clause in SQL format.
+
+        Examples:
+            >>> SQLQueryBuilder.build_order_by_clause({
+            ...     "shot.name": SortOrder.DESC,
+            ...     "name": SortOrder.ASC
+            ... })
+            "'shot'.name DESC, _.name ASC"
+            
+            >>> SQLQueryBuilder.build_order_by_clause({
+            ...     "shot.name": "desc",
+            ...     "name": "asc"
+            ... })
+            "'shot'.name DESC, _.name ASC"
         """
         if not order_by:
             return

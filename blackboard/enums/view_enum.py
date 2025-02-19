@@ -28,7 +28,7 @@ class SortOrder(Enum):
 
 
 class FilterOperation(Enum):
-    # Display name, SQL operator, number of values
+    # Display name, SQL operator, number of parameters
     LT = ("Less Than", "< ?", 1)
     GT = ("Greater Than", "> ?", 1)
     LTE = ("Less Than or Equal", "<= ?", 1)
@@ -52,12 +52,12 @@ class FilterOperation(Enum):
 
     # Initialization and Setup
     # ------------------------
-    def __init__(self, display_name: str, sql_operator: str, num_values: int):
+    def __init__(self, display_name: str, sql_operator: str, num_params: int):
         """Initialize the enum with its display name, SQL operator, and number of values.
         """
         self._display_name = display_name
         self._sql_operator = sql_operator
-        self._num_values = num_values
+        self._num_params = num_params
 
     @property
     def display_name(self) -> str:
@@ -72,22 +72,22 @@ class FilterOperation(Enum):
         return self._sql_operator
 
     @property
-    def num_values(self) -> int:
+    def num_params(self) -> int:
         """Return the number of values required for the filter operation.
         """
-        return self._num_values
+        return self._num_params
 
-    def requires_value(self) -> bool:
+    def requires_param(self) -> bool:
         """Determine if the filter condition requires input values.
 
         Returns:
             bool: True if values are required, False otherwise.
         """
-        return self._num_values != 0
+        return self._num_params != 0
 
-    def is_multi_value(self) -> bool:
+    def is_multi_param(self) -> bool:
         """Return True if the operation supports multiple values."""
-        return self._num_values == -1
+        return self._num_params == -1
 
     @classmethod
     def from_string(cls, name: str) -> 'FilterOperation':

@@ -40,3 +40,15 @@ class LineEdit(QtWidgets.QLineEdit):
         """
         self.style().unpolish(self)
         self.style().polish(self)
+
+
+if __name__ == '__main__':
+    app = QtWidgets.QApplication([])
+
+    # Create a LineEdit instance with the validator
+    validator = QtGui.QIntValidator(1, 100)
+    line_edit = LineEdit(validator=validator)
+    line_edit.setPlaceholderText("Enter a number between 1 and 100")
+    line_edit.show()
+
+    app.exec_()

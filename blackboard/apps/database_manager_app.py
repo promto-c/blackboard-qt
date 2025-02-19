@@ -16,6 +16,7 @@ from tablerqicon import TablerQIcon
 
 # Local Imports
 # -------------
+from blackboard.enums.view_enum import FieldType
 from blackboard.utils.database import DatabaseManager, FieldInfo, ManyToManyField
 from blackboard.widgets.main_window import MainWindow
 from blackboard.widgets import TreeWidgetItem, DatabaseViewWidget
@@ -182,7 +183,8 @@ class AddFieldDialog(QtWidgets.QDialog):
         self.field_name_label = LabelEmbedderWidget(self.field_name_input, "Field Name")
 
         self.field_type_dropdown = QtWidgets.QComboBox()
-        self.field_type_dropdown.addItems(DatabaseManager.FIELD_TYPES)
+        for field_type in FieldType:
+            self.field_type_dropdown.addItem(field_type.display_name, field_type.name)
         self.field_type_label = LabelEmbedderWidget(self.field_type_dropdown, "Field Type")
 
         self.enum_table_dropdown = QtWidgets.QComboBox()
@@ -229,8 +231,7 @@ class AddFieldDialog(QtWidgets.QDialog):
     # Public Methods
     # --------------
     def toggle_enum_input(self, field_type):
-        is_enum = field_type == "ENUM"
-        self.toggle_enum_fields(is_enum)
+        self.toggle_enum_fields(field_type == FieldType.ENUM.display_name)
 
     def toggle_enum_fields(self, visible):
         self.enum_table_label.setVisible(visible)
@@ -252,7 +253,7 @@ class AddFieldDialog(QtWidgets.QDialog):
 
     def add_field(self):
         field_name = self.field_name_input.text().strip()
-        field_type = self.field_type_dropdown.currentText()
+        field_type = self.field_type_dropdown.currentData()
         not_null = "NOT NULL" if self.not_null_checkbox.isChecked() else ""
         unique = "UNIQUE" if self.unique_checkbox.isChecked() else ""
 

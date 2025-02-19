@@ -25,6 +25,7 @@ import blackboard as bb
 from blackboard import widgets
 from blackboard.widgets.momentum_scroll_widget import MomentumScrollArea
 from blackboard.widgets.filter_widget import FilterWidget, MultiSelectFilterWidget
+from blackboard.utils.database.sql_query_builder import SQLQueryBuilder
 
 
 # Class Definitions
@@ -836,47 +837,37 @@ class DatabaseViewWidget(DataViewWidget):
             action = self.add_filter_menu.addAction(field)
             action.triggered.connect(partial(self.create_filter_widget, field))
 
-    def create_filter_widget(self, column_name: str):
+    def create_filter_widget(self, field_chain: str):
         """Create a filter widget based on the selected column and its data type.
         """
-        is_relation_column = False
+        # The column represents a relation, split to get the table and field names
+        related_table, related_field = SQLQueryBuilder.resolve_model_field(
+            self._base_model.name,
+            field_chain=field_chain,
+            relationships=self._database.get_relationships(self._base_model.name),
+            as_tuple=True
+        )
+        field_type = self._database.get_field_type(related_table, related_field)
 
-        # TODO: Store relation chain in header item to be extract from item directly instead of extract from split '.'
-        if '.' in column_name:
-            # The column represents a relation, split to get the table and field names
-            related_table, display_field = column_name.split('.')
-            is_relation_column = True
-        else:
-            # Get field information for the column
-            field_info = self._base_model.get_field(column_name)
-
-            # Handle relation columns
-            if field_info.is_foreign_key:
-                related_table = field_info.fk.related_table
-                display_field = None
-                is_relation_column = True
-            elif field_info.is_many_to_many:
-                # Handle many-to-many relationship fields
-                related_table = field_info.m2m.related_table
-                display_field = field_info.m2m.related_fk.related_field
-                is_relation_column = True
-
-        # Check if the column is a foreign key or a many-to-many field
-        if is_relation_column:
+        if '.' in field_chain:
             # TODO: Handle the column based on its type if it is not TEXT
             # Fetch possible values from the related table
-            related_model = self.db_manager.get_model(related_table)
-            possible_values = list(related_model.query(display_field, distinct=True, as_dict=False))
+            possible_values = self._database.query(
+                model_name=related_table,
+                fields=related_field,
+                distinct=True,
+                as_dict=False,
+            )
 
             # Create a MultiSelectFilterWidget with the possible values
-            filter_widget = MultiSelectFilterWidget(filter_name=column_name)
-            filter_widget.add_items(possible_values)
+            filter_widget = MultiSelectFilterWidget(filter_name=field_chain)
+            filter_widget.add_items(list(possible_values))
 
         else:
             # Instantiate the filter widget
             filter_widget = FilterWidget.create_for_field(
-                filter_name=column_name,
-                field_type=field_info.type,
+                filter_name=field_chain,
+                field_type=field_type,
             )
 
         if filter_widget:

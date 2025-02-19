@@ -15,7 +15,7 @@ from tablerqicon import TablerQIcon
 
 # Local Imports
 # -------------
-from blackboard.utils import KeyBinder, TextExtraction, TreeUtil
+from blackboard.utils import KeyBinder, TextExtraction, TreeItemUtil, TreeUtil
 
 
 # Class Definitions
@@ -559,7 +559,7 @@ class SimpleSearchWidget(QtWidgets.QFrame):
         # Hide all items
         TreeUtil.hide_all_items(self.tree_widget)
         # Show match items
-        TreeUtil.set_items_visibility(self._all_match_items, is_visible=True)
+        TreeItemUtil.set_items_visibility(self._all_match_items, is_visible=True)
 
     def _clear_search(self):
         """Clear the search and show all items.

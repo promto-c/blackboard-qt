@@ -353,8 +353,6 @@ class CheckableProxyModel(QtCore.QSortFilterProxyModel):
         except AttributeError:
             pass
 
-        return None
-
     def rowCount(self, parent=QtCore.QModelIndex()):
         if parent.isValid():
             # When the parent is valid, we're looking at children of a parent, so do not add additional rows count

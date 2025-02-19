@@ -115,7 +115,7 @@ class AbstractDatabase(ABC):
         finally:
             cursor.close()
 
-    def query_raw_one(self, query: str, parameters: Optional[List[Any]] = None, as_dict: bool = True) -> Optional[Union[Dict[str, Any], Tuple[Any, ...]]]:
+    def query_raw_one(self, query: str, parameters: Optional[List[Any]] = None, as_dict: bool = True, is_single_field: bool = False) -> Optional[Union[Dict[str, Any], Tuple[Any, ...]]]:
         """Execute a raw SQL query and return the first result as a dictionary or tuple.
 
         Args:
@@ -129,7 +129,7 @@ class AbstractDatabase(ABC):
             Optional[Union[Dict[str, Any], Tuple[Any, ...]]]: The first row from the query result
                 or None if no row is found.
         """
-        return next(self.query_raw(query, parameters, as_dict), None) 
+        return next(self.query_raw(query, parameters, as_dict=as_dict, is_single_field=is_single_field), None) 
 
     def query(self, model_name: str, fields: Optional[List[str]] = None, 
               conditions: Optional[Dict[Union['GroupOperator', str], Any]] = None,
