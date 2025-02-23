@@ -877,7 +877,7 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         # Take all children from the parent item
         target_items = parent_item.takeChildren()
         # Create groups based on the target items
-        grouped_name_to_tree_items = self._create_item_groups(target_items, column)
+        grouped_name_to_tree_items = TreeItemUtil.group_items_by_field(target_items, column)
 
         # Iterate through each group and its items
         for grouped_name, items in grouped_name_to_tree_items.items():
@@ -1133,25 +1133,6 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
 
         # Show the context menu
         self.header_menu.popup(QtGui.QCursor.pos())
-
-    def _create_item_groups(self, items: List[QtWidgets.QTreeWidgetItem], column: int) -> Dict[str, List[QtWidgets.QTreeWidgetItem]]:
-        """Group the data into a dictionary mapping group names to lists of tree items.
-
-        Args:
-            items (List[QtWidgets.QTreeWidgetItem]): The data to be grouped.
-            column (int):
-
-        Returns:
-            Dict[str, List[QtWidgets.QTreeWidgetItem]]: A dictionary mapping group names to lists of tree items.
-        """
-        # Create a defaultdict to store the groups
-        group_name_to_tree_items = defaultdict(list)
-
-        for item in items:
-            key_data = item.data(column, QtCore.Qt.ItemDataRole.UserRole) or '_others'
-            group_name_to_tree_items[key_data].append(item)
-
-        return group_name_to_tree_items
 
     def _highlight_selected_items(self):
         """Highlight the specified `tree_items` in the tree widget.

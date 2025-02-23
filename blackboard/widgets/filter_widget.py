@@ -465,8 +465,8 @@ class FilterButton(QtWidgets.QPushButton):
 
 class FilterWidget(QtWidgets.QWidget):
 
-    SUPPORTED_TYPE: Optional[FilterOperation] = None
-    CONDITIONS: List[FilterOperation] = []
+    SUPPORTED_TYPE: Optional[FieldType] = None
+    OPERATIONS: List[FilterOperation] = []
     DEFAULT_OPERATION = FilterOperation.EQ
 
     activated = QtCore.Signal(bool)
@@ -482,7 +482,7 @@ class FilterWidget(QtWidgets.QWidget):
         # Automatically register the subclass if it defines a SUPPORTED_TYPE attribute
         if cls.SUPPORTED_TYPE is not None:
             FilterWidget.registry[cls.SUPPORTED_TYPE] = cls
-            cls.CONDITIONS = cls.SUPPORTED_TYPE.supported_operations
+            cls.OPERATIONS = cls.SUPPORTED_TYPE.supported_operations
 
     def __init__(self, filter_name: str = '', display_name: str = None, parent: QtWidgets.QWidget = None):
         super().__init__(parent, QtCore.Qt.WindowType.Popup)
@@ -566,7 +566,7 @@ class FilterWidget(QtWidgets.QWidget):
         self.condition_combo_box = QtWidgets.QComboBox()
         self.condition_combo_box.setProperty('widget-style', 'clean')
         # Update the condition combo box
-        for condition in self.CONDITIONS:
+        for condition in self.OPERATIONS:
             self.condition_combo_box.addItem(condition.display_name, condition)
         self.condition_combo_box.setCurrentText(self.DEFAULT_OPERATION.display_name)
 

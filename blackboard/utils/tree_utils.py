@@ -2,6 +2,10 @@
 # ---------------------
 from typing import Any, Callable, List, Optional, Tuple, Dict, Iterable, Union
 
+# Standard Library Imports
+# ------------------------
+from collections import defaultdict
+
 # Third Party Imports
 # -------------------
 from qtpy import QtCore, QtGui, QtWidgets
@@ -408,6 +412,27 @@ class TreeItemUtil:
         # Remove items from their current parents and add them to the new parent
         TreeItemUtil.remove_items(items)
         target_parent.addChildren(items)
+
+    @staticmethod
+    def group_items_by_field(items: List[QtWidgets.QTreeWidgetItem], field: int, default_group: str = 'uncategorized') -> Dict[str, List[QtWidgets.QTreeWidgetItem]]:
+        """Group the data into a dictionary mapping group names to lists of tree items.
+
+        Args:
+            items (List[QtWidgets.QTreeWidgetItem]): The data to be grouped.
+            field (int): The column index to extract the grouping key.
+            default_group (str, optional): The fallback group name if no data is found. Defaults to 'uncategorized'.
+
+        Returns:
+            Dict[str, List[QtWidgets.QTreeWidgetItem]]: A dictionary mapping group names to lists of tree items.
+        """
+        # Create a defaultdict to store the groups
+        group_name_to_tree_items = defaultdict(list)
+
+        for item in items:
+            key_data = item.data(field, QtCore.Qt.ItemDataRole.UserRole) or default_group
+            group_name_to_tree_items[key_data].append(item)
+
+        return group_name_to_tree_items
 
     @classmethod
     def set_items_visibility(cls, items: List[QtWidgets.QTreeWidgetItem],
