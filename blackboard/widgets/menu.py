@@ -27,6 +27,9 @@ class SectionAction(QtWidgets.QWidgetAction):
 
         self.parent_menu = parent_menu
 
+        # List to keep track of actions added under this section
+        self.actions = []
+
         # Create a container widget
         container = QtWidgets.QWidget()
         layout = QtWidgets.QHBoxLayout(container)
@@ -83,6 +86,7 @@ class SectionAction(QtWidgets.QWidgetAction):
                 action.setData(data)
 
         self.parent_menu.insertAction(self.separator, action)
+        self.actions.append(action)
 
         return action
 
@@ -97,7 +101,8 @@ class SectionAction(QtWidgets.QWidgetAction):
             QtWidgets.QMenu: The created submenu.
         """
         menu = ContextMenu(title, self.parent_menu, **kwargs)
-        self.parent_menu.insertMenu(self.separator, menu)
+        menu_action = self.parent_menu.insertMenu(self.separator, menu)
+        self.actions.append(menu_action)
 
         return menu
 
@@ -108,6 +113,13 @@ class SectionAction(QtWidgets.QWidgetAction):
             QtWidgets.QAction: The created separator action.
         """
         return self.parent_menu.insertSeparator(self.separator)
+
+    def clear(self):
+        """Clear all actions added under this section.
+        """
+        for action in self.actions:
+            self.parent_menu.removeAction(action)
+        self.actions.clear()
 
 
 class ContextMenu(QtWidgets.QMenu):
