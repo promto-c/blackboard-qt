@@ -66,7 +66,8 @@ class ImageReader:
             raise FileNotFoundError(f"The path {file_path} does not exist or is not a file.")
     
         file_type_handlers = {
-                'exr': cls.read_exr if IS_SUPPORT_OPENEXR_LIB else cls.cv2_read_image,
+                'exr': cls.read_exr,
+                'sxr': cls.read_exr,
                 'dpx': DPXReader.read_dpx,
             }
 
@@ -85,7 +86,7 @@ class ImageReader:
     def cv2_read_image(file_path: str):
         # Read file using OpenCV
         try:
-            image_data = cv2.imread(file_path, cv2.IMREAD_ANYCOLOR)
+            image_data = cv2.imread(file_path, cv2.IMREAD_UNCHANGED)
         except cv2.error:
             image_data = None
 
@@ -111,6 +112,9 @@ class ImageReader:
         """
         if not os.path.isfile(image_path):
             return
+
+        if not IS_SUPPORT_OPENEXR_LIB:
+            return cls.cv2_read_image(image_path)
 
         # Open the EXR file for reading
         exr_file = OpenEXR.InputFile(image_path)
@@ -365,6 +369,54 @@ class ImageSequence:
 
     def get_frame_path(self, frame: 'Number'):
         return self.path_sequence.get_frame_path(frame)
+
+
+class ImageUtil:
+
+    @staticmethod
+    def compute_luminance(color_img: 'np.ndarray') -> 'np.ndarray':
+        """Compute the luminance of an RGB image.
+        """
+        weights = np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)
+        return np.dot(color_img, weights)
+
+    @staticmethod
+    def compute_dynamic_tone_params(img: 'np.ndarray', low_percentile: float = 0.5, mid_percentile: float = 50, high_percentile: float = 99.5) -> Tuple[float, float, float]:
+        """Compute dynamic tone parameters (lift, gamma, and gain) for an image based on percentile values.
+
+        The computation is based on the image histogram percentiles to adjust the tonal range
+        of the image, including lift (black level), gamma (midtone adjustment), and gain (stretch factor).
+
+        Args:
+            img (numpy.ndarray): Input image (a single-channel or luminance image) as a float32/float16 numpy array.
+            low_percentile (float, optional): The percentile for the lower bound (default is 0.5).
+            mid_percentile (float, optional): The percentile for the mid tone (default is 50).
+            high_percentile (float, optional): The percentile for the upper bound (default is 99.5).
+
+        Returns:
+            Tuple[float, float, float]: A tuple containing three values:
+                - lift (float): Black level adjustment.
+                - gamma (float): Gamma value for tone correction based on the mid value.
+                - gain (float): Multiplicative scale factor to stretch the range.
+        """
+        p_low = np.percentile(img, low_percentile)
+        p_mid = np.percentile(img, mid_percentile)
+        p_high = np.percentile(img, high_percentile)
+
+        # Compute lift (black level)
+        lift = p_low
+
+        # Normalize mid value to the [0,1] range
+        x = (p_mid - p_low) / (p_high - p_low) if p_high > p_low else 0.5
+
+        # Compute gamma such that after gamma correction, x^(1/gamma) = 0.5.
+        # That is: gamma = log(x)/log(0.5)
+        gamma = np.log(x) / np.log(0.5) if x > 0 else 1.0
+
+        # Gain: scale so that the difference (p_high - p_low) maps to 1.0
+        gain = 1.0 / (p_high - p_low) if p_high > p_low else 1.0
+
+        return lift, gamma, gain
 
 
 if __name__ == "__main__":

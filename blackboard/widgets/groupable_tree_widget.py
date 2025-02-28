@@ -1122,6 +1122,8 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
             pos (QtCore.QPoint): The position where the right-click occurred.
         """
         # Get the index of the column where the right click occurred
+        if not self._fields:
+            return
         self._selected_field = self._fields[self.header().logicalIndexAt(pos)]
 
         # Emit the custom signal with the column index
