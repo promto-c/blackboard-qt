@@ -1229,6 +1229,8 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         """
         self.fetch_manager.stop_fetch()
         self._id_to_tree_item.clear()
+        if hasattr(self.invisibleRootItem(), 'child_grouped_dict'):
+            self.invisibleRootItem().child_grouped_dict.clear()
         super().clear()
 
     def scrollContentsBy(self, dx: int, dy: int):

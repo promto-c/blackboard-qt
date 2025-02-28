@@ -50,12 +50,12 @@ class LabelEmbedderWidget(QtWidgets.QWidget):
         self._label = QtWidgets.QLabel(self._text)
         self._label.setObjectName("embedder_label")
         # Set size policy to ensure the label uses its minimum height
-        self._label.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Maximum)
+        self._label.setSizePolicy(QtWidgets.QSizePolicy.Policy.Preferred, QtWidgets.QSizePolicy.Policy.Maximum)
 
         # Add Widgets to Layouts
         # ----------------------
         self.top_label_layout.addWidget(self._label)
-        self.top_label_layout.setAlignment(self._label, QtCore.Qt.AlignBottom)
+        self.top_label_layout.setAlignment(self._label, QtCore.Qt.AlignmentFlag.AlignBottom)
         self.top_label_layout.addStretch()
         self.top_label_layout.addLayout(self.action_layout)
         layout.addWidget(self._widget)
