@@ -30,7 +30,7 @@ class FrameIndicatorBar(QtWidgets.QWidget):
 
     # Initialization and Setup
     # ------------------------
-    def __init__(self, first_frame: int = 0, last_frame: int = 1, parent=None):
+    def __init__(self, first_frame: int = 0, last_frame: int = 1, parent=None, *args, **kwargs):
         """Initialize the frame indicator bar with a specified range of frames.
 
         Args:
@@ -38,7 +38,7 @@ class FrameIndicatorBar(QtWidgets.QWidget):
             last_frame: An integer specifying the last frame number.
             parent: The parent widget. Defaults to None.
         """
-        super().__init__(parent)
+        super().__init__(parent, *args, **kwargs)
         self.first_frame = first_frame
         self.last_frame = last_frame
         self.total_frames = last_frame - first_frame + 1
@@ -98,7 +98,7 @@ class FrameIndicatorBar(QtWidgets.QWidget):
 
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
-        super(MainWindow, self).__init__()
+        super().__init__()
         self.frame_indicator = FrameIndicatorBar(100)  # Assume 100 frames for this example
         self.setCentralWidget(self.frame_indicator)
 
