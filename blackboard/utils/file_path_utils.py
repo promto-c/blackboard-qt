@@ -1,6 +1,6 @@
 # Type Checking Imports
 # ---------------------
-from typing import TYPE_CHECKING, Dict, List, Generator, Optional, Tuple, Union, Callable, Iterable
+from typing import TYPE_CHECKING, Dict, List, Generator, Optional, Tuple, Union, Callable, Iterable, Set
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -75,17 +75,30 @@ class FileUtil:
 
         return details
 
-    @staticmethod
-    def get_file_extension(file_path: str) -> str:
+    @classmethod
+    def get_file_extension(cls, file_path: str, normalized: bool = False) -> str:
         """Get the file extension of a file.
 
         Args:
             file_path (str): Path to the file.
+            normalized (bool, optional): Whether to return the extension in a normalized format 
+                                         (lowercase, without a leading dot). Defaults to False.
 
         Returns:
             str: The file extension, or an empty string if the file has no extension.
+
+        Examples:
+            >>> FileUtil.get_file_extension("document.TXT")
+            'TXT'
+            >>> FileUtil.get_file_extension("document.TXT", normalized=True)
+            'txt'
+            >>> FileUtil.get_file_extension("archive.tar.gz")
+            'gz'
+            >>> FileUtil.get_file_extension("no_extension")
+            ''
         """
-        return file_path.rsplit('.', 1)[-1] if '.' in file_path else ''
+        ext = file_path.rsplit('.', 1)[-1] if '.' in file_path else ''
+        return cls.normalize_extension(ext) if normalized else ext
 
     @staticmethod
     def get_file_owner(file_path: str) -> str:
@@ -138,6 +151,90 @@ class FileUtil:
         
         # Handle extremely large sizes that exceed petabytes
         return f"{size:.{precision}f} PB"
+
+    @staticmethod
+    def normalize_extension(extension: str) -> str:
+        """Normalize a single file extension by stripping whitespace, removing any leading dot,
+        and converting it to lowercase.
+
+        Args:
+            extension (str): The file extension string (e.g., '.TXT', ' py ', 'Md').
+
+        Returns:
+            str: The normalized file extension without a leading dot.
+
+        Examples:
+            >>> FileUtil.normalize_extension('.TXT')
+            'txt'
+            >>> FileUtil.normalize_extension(' py ')
+            'py'
+            >>> FileUtil.normalize_extension('Md')
+            'md'
+        """
+        return extension.strip().lstrip('.').lower()
+
+    @classmethod
+    def normalize_extensions(cls, extensions: Set[str]) -> Set[str]:
+        """Normalize a set of file extensions by stripping whitespace, converting to lowercase,
+        and removing any leading dot.
+
+        Args:
+            extensions (Optional[Set[str]]): A set of file extension strings (e.g., {'.txt', ' py ', ' .Md'}).
+
+        Returns:
+            Optional[Set[str]]: A set of normalized extensions without a leading dot, or None if input is None.
+        """
+        return {cls.normalize_extension(ext) for ext in extensions}
+
+    @classmethod
+    def filter_files(cls, file_paths: List[str], included_extensions=None, excluded_extensions=None) -> List[str]:
+        """Filters a list of file paths based on inclusion and exclusion criteria for file extensions.
+
+        The file extension is determined by the portion of the file name after the last dot. Comparisons
+        are case-insensitive, and the provided extensions are normalized (removing any leading dot and
+        converting to lowercase).
+
+        Filtering behavior:
+            - If `included_extensions` is provided, only files with an extension in this set are included.
+            - If `excluded_extensions` is provided, any file with an extension in this set is excluded.
+            - If both are provided, a file must have an extension in `included_extensions` and not in `excluded_extensions`.
+
+        Args:
+            file_paths (List[str]): List of file paths to filter.
+            included_extensions (Optional[Iterable[str]]): Extensions to include (e.g., {'.txt', 'py'}).
+            excluded_extensions (Optional[Iterable[str]]): Extensions to exclude (e.g., {'zip', '.png'}).
+
+        Returns:
+            List[str]: A list of file paths that meet the filtering criteria.
+
+        Examples:
+            >>> files = ['document.txt', 'image.PNG', 'archive.zip', 'script.py']
+            >>> FileUtil.filter_files(files, included_extensions={'.txt', '.py'})
+            ['document.txt', 'script.py']
+            >>> FileUtil.filter_files(files, excluded_extensions={'zip', '.png'})
+            ['document.txt', 'script.py']
+            >>> FileUtil.filter_files(files)
+            ['document.txt', 'image.PNG', 'archive.zip', 'script.py']
+        """
+        # Normalize provided extension sets if they are not None.
+        if included_extensions is not None:
+            included_extensions = cls.normalize_extensions(included_extensions)
+        if excluded_extensions is not None:
+            excluded_extensions = cls.normalize_extensions(excluded_extensions)
+        
+        filtered_file_paths = []
+        for file_path in file_paths:
+            # Extract the extension and convert it to lowercase.
+            ext = cls.get_file_extension(file_path, normalized=True)
+            # If included_extensions is provided and the file's extension is not in it, skip the file.
+            if included_extensions and ext not in included_extensions:
+                continue
+            # If excluded_extensions is provided and the file's extension is in it, skip the file.
+            if excluded_extensions and ext in excluded_extensions:
+                continue
+            filtered_file_paths.append(file_path)
+            
+        return filtered_file_paths
 
 
 class FormatStyle(Enum):
