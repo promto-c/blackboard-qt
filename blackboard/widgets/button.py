@@ -3,6 +3,7 @@ from tablerqicon import TablerQIcon
 
 from blackboard.utils.tree_utils import ItemOverlay
 
+
 class AnimatedButton(QtWidgets.QPushButton):
     entered = QtCore.Signal()
     leaved = QtCore.Signal()
@@ -375,6 +376,41 @@ class ItemOverlayButton(ItemOverlay):
         super().__init__(self.button)
 
         self.button.confirm_button.clicked.connect(lambda :self.triggered.emit(self.current_item))
+
+class TearOffButton(QtWidgets.QPushButton):
+
+    LABEL = ': ' * 12
+    TOOL_TIP = 'Click to detach the widget from the menu.'
+    HEIGHT = 20
+
+    def __init__(
+            self, widget_action: QtWidgets.QWidgetAction,
+            text: str = LABEL, toolTip: str = TOOL_TIP,
+            *args, **kwargs
+        ):
+        super().__init__(text=text, *args, **kwargs)
+
+        self.setFixedHeight(self.HEIGHT)
+        self.widget_action = widget_action
+        self.original_menu: QtWidgets.QMenu = widget_action.parent()
+        self.widget = widget_action.defaultWidget()
+        self.clicked.connect(self.tear_off)
+    
+    def tear_off(self):
+        if not self.widget:
+            return
+
+        # Remove widget action from menu
+        self.original_menu.removeAction(self.widget_action)
+        self.widget.move(QtGui.QCursor.pos())
+        self.widget.show()
+
+
+class TearOffWidgetAction(QtWidgets.QWidgetAction):
+    def __init__(self, widget_action: QtWidgets.QWidgetAction, *args, **kwargs):
+        super().__init__(widget_action.parent(), *args, **kwargs)
+        tear_off_button = TearOffButton(widget_action)
+        self.setDefaultWidget(tear_off_button)
 
 
 if __name__ == "__main__":
