@@ -118,7 +118,7 @@ class AdaptivePaddedDoubleSpinBox(QtWidgets.QDoubleSpinBox):
             0
         """
         # Split the text at the decimal point to extract integer and decimal parts
-        integer_part, _, fraction_part = text.partition('.')
+        integer_part, _, fraction_part = text.removeprefix(self.prefix()).removesuffix(self.suffix()).partition('.')
 
         # Update padding lengths based on the lengths of integer and decimal parts
         self.integer_padding = len(integer_part)
