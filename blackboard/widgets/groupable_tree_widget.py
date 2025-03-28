@@ -267,7 +267,8 @@ class ColumnManagementWidget(QtWidgets.QTreeWidget):
         column_name = item.text(1)
         is_hidden = item.checkState(0) == QtCore.Qt.CheckState.Unchecked
         column_index = self.tree_widget.get_column_index(column_name)
-
+        if self.tree_widget.isColumnHidden(column_index) == is_hidden:
+            return
         self.tree_widget.setColumnHidden(column_index, is_hidden)
 
     def update_columns(self):
@@ -442,6 +443,7 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
     fetch_complete = QtCore.Signal()
     reload_requested = QtCore.Signal()
     field_changed = QtCore.Signal()
+    field_visibility_changed = QtCore.Signal(int, bool)
 
     # Initialization and Setup
     # ------------------------
@@ -1063,6 +1065,11 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
     def fields(self) -> List[str]:
         return self._fields
 
+    @property
+    def shown_fields(self) -> List[str]:
+        column_indexes = TreeUtil.get_shown_column_indexes(self)
+        return [self._fields[column_index] for column_index in column_indexes]
+
     # Private Methods
     # ---------------
     def _create_header_menu(self):
@@ -1209,6 +1216,11 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         super().setHeaderLabels(self._fields)
         self.field_changed.emit()
 
+    def setColumnHidden(self, column: Union[int, str], hidden: bool):
+        column_index = self.get_column_index(column) if isinstance(column, str) else column
+        super().setColumnHidden(column_index, hidden)
+        self.field_visibility_changed.emit(column_index, not hidden)
+
     def hideColumn(self, column: Union[int, str]):
         """Hide the specified column.
 
@@ -1217,6 +1229,12 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         """
         column_index = self.get_column_index(column) if isinstance(column, str) else column
         super().hideColumn(column_index)
+        self.field_visibility_changed.emit(column_index, True)
+
+    def showColumn(self, column: Union[int, str]):
+        column_index = self.get_column_index(column) if isinstance(column, str) else column
+        super().showColumn(column_index)
+        self.field_visibility_changed.emit(column_index, True)
 
     def startDrag(self, supported_actions: QtCore.Qt.DropActions):
         """Handle drag event of the tree widget.

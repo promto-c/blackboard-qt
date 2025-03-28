@@ -693,6 +693,7 @@ class DatabaseViewWidget(DataViewWidget):
         self.add_record_button.clicked.connect(self.show_add_record_dialog)
         self.delete_record_button.clicked.connect(self.delete_record)
         self.tree_widget.itemDoubleClicked.connect(self.edit_record)
+        self.tree_widget.field_visibility_changed.connect(self.populate)
 
         self.tree_widget.field_changed.connect(self.update_add_filter_menu)
 
@@ -889,7 +890,7 @@ class DatabaseViewWidget(DataViewWidget):
 
     def populate(self):
         generator = self._base_model.query(
-            fields=self.tree_widget.fields,
+            fields=self.tree_widget.shown_fields,
             conditions=self.filter_bar_widget.get_query_conditions(),
         )
         self.tree_widget.set_generator(generator)

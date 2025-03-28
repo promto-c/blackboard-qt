@@ -109,3 +109,36 @@ class MainWindow(QtWidgets.QMainWindow):
             self.showNormal()
         else:
             self.showFullScreen()
+
+    def save_state(self):
+        self.settings.setValue('geometry', self.geometry())
+        self.settings.setValue('state', self.saveState())
+
+        if hasattr(self.widget, 'save_state'):
+            self.widget.save_state(self.settings)
+
+        if self.use_scalable_view:
+            self.widget_view.save_state(self.settings)
+
+    def load_state(self):
+        geometry = self.settings.value('geometry', QtCore.QRect())
+        state = self.settings.value('state', QtCore.QByteArray())
+        if geometry:
+            self.setGeometry(geometry)
+        self.restoreState(state)
+
+        if hasattr(self.widget, 'load_state'):
+            self.widget.load_state(self.settings)
+
+        if self.use_scalable_view:
+            self.widget_view.load_state(self.settings)
+
+    # Override Methods
+    # ----------------
+    def show(self):
+        super().show()
+        self.load_state()
+
+    def closeEvent(self, event):
+        self.save_state()
+        super().closeEvent(event)

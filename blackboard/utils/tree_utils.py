@@ -219,6 +219,23 @@ class TreeUtil:
         """
         return [column_index for column_index in range(tree_widget.columnCount()) if not tree_widget.isColumnHidden(column_index)]
 
+    @staticmethod
+    def get_shown_columns(tree_widget: 'QtWidgets.QTreeWidget') -> List[str]:
+        """Get the header labels of the shown columns in the tree widget.
+
+        Args:
+            tree_widget (QtWidgets.QTreeWidget): The tree widget to get shown column headers from.
+
+        Returns:
+            List[str]: A list of header labels for the shown columns.
+        """
+        header_item = tree_widget.headerItem()
+        return [
+            header_item.text(column_index)
+            for column_index in range(tree_widget.columnCount())
+            if not tree_widget.isColumnHidden(column_index)
+        ]
+
     # NOTE: May not use
     @staticmethod
     def get_child_level(item: 'QtWidgets.QTreeWidgetItem') -> int:
