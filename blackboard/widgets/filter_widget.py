@@ -22,6 +22,7 @@ from blackboard.widgets.menu import ContextMenu, ResizableMenu
 from blackboard.widgets.line_edit import LineEdit
 from blackboard.widgets.calendar_widget import CalendarSelectionMode, RangeCalendarWidget
 from blackboard.enums.view_enum import FilterOperation, FieldType, FilterMode, DateRange
+from blackboard.widgets.button import TearOffWidgetAction
 
 
 # Class Definitions
@@ -444,6 +445,8 @@ class FilterButton(QtWidgets.QPushButton):
         # Update the popup menu with the new filter widget
         action = QtWidgets.QWidgetAction(self.popup_menu)
         action.setDefaultWidget(self._filter_widget)
+        tear_off_widget_action = TearOffWidgetAction(action)
+        self.popup_menu.addAction(tear_off_widget_action)
         self.popup_menu.addAction(action)
 
         resized_connection = self.popup_menu.resized.connect(self._filter_widget.setMinimumSize)

@@ -109,6 +109,8 @@ class OverlayWidget(QtWidgets.QWidget):
         screen = QtWidgets.QApplication.primaryScreen()
         self.setGeometry(screen.availableGeometry())
 
+        self.event_handler = InputEventHandler(self)
+
     def __init_ui(self):
         """Initialize the UI components.
         """
@@ -135,6 +137,20 @@ class OverlayWidget(QtWidgets.QWidget):
         self.mouse_update_signal.connect(self.mouse_label.display_message)
         self.scroll_update_signal.connect(self.scroll_label.display_message)
 
+    # Overridden Methods
+    # ------------------
+    def show(self):
+        """Show the overlay widget and start the event handler.
+        """
+        self.event_handler.start()
+        super().show()
+
+    def close(self):
+        """Stop the event handler and close the overlay widget.
+        """
+        self.event_handler.stop()
+        super().close()
+
 
 class InputEventHandler:
     """Handles keyboard and mouse events and updates the overlay widget accordingly.
@@ -160,7 +176,42 @@ class InputEventHandler:
 
     # Public Methods
     # --------------
-    def keyboard_callback(self, event: keyboard.KeyboardEvent):
+    def start(self):
+        """Start listening to keyboard and mouse events.
+        """
+        # Start the keyboard hook
+        keyboard.hook(self._keyboard_callback)
+
+        # Start the mouse listener
+        self.mouse_listener = mouse.Listener(on_click=self._on_click, on_scroll=self._on_scroll)
+        self.mouse_listener.start()
+
+    def stop(self):
+        """Stop listening to keyboard and mouse events.
+        """
+        # Stop the keyboard hook
+        keyboard.unhook_all()
+
+        # Stop the mouse listener
+        self.mouse_listener.stop()
+
+    # Private Methods
+    # ---------------
+    def _sort_key(self, key: str) -> Tuple[int, Union[int, str]]:
+        """Sort modifier keys by a predefined order and non-modifiers alphabetically.
+
+        Args:
+            key (str): The key name.
+
+        Returns:
+            Tuple[int, Union[int, str]]: Sorting key tuple.
+        """
+        try:
+            return (0, self.MODIFIER_KEYS.index(key))
+        except ValueError:
+            return (1, key)
+
+    def _keyboard_callback(self, event: keyboard.KeyboardEvent):
         """Handle keyboard events, updating the pressed keys and the overlay display.
 
         Args:
@@ -180,7 +231,7 @@ class InputEventHandler:
         message = " + ".join(sorted_keys)
         self.overlay.keyboard_update_signal.emit(f"⌨️ {message}")
 
-    def on_click(self, x: int, y: int, button: mouse.Button, pressed: bool):
+    def _on_click(self, x: int, y: int, button: mouse.Button, pressed: bool):
         """Handle mouse click events and update the overlay.
 
         Args:
@@ -201,7 +252,7 @@ class InputEventHandler:
         message = " + ".join(sorted(self.pressed_mouse_buttons))
         self.overlay.mouse_update_signal.emit(f"🖱️ {message}")
 
-    def on_scroll(self, x: int, y: int, dx: int, dy: int):
+    def _on_scroll(self, x: int, y: int, dx: int, dy: int):
         """Handle mouse scroll events and update the overlay.
 
         Args:
@@ -218,51 +269,6 @@ class InputEventHandler:
         message = f"🖲️ {', '.join(event_texts)}"
         self.overlay.scroll_update_signal.emit(message)
 
-    # Private Methods
-    # ---------------
-    def _sort_key(self, key: str) -> Tuple[int, Union[int, str]]:
-        """Sort modifier keys by a predefined order and non-modifiers alphabetically.
-
-        Args:
-            key (str): The key name.
-
-        Returns:
-            Tuple[int, Union[int, str]]: Sorting key tuple.
-        """
-        try:
-            return (0, self.MODIFIER_KEYS.index(key))
-        except ValueError:
-            return (1, key)
-
-
-class KeyboardHookThread(QtCore.QThread):
-    """QThread to run the keyboard hook in a separate thread.
-    """
-    def __init__(self, event_handler: InputEventHandler, parent: QtCore.QObject = None):
-        super().__init__(parent)
-        self.event_handler = event_handler
-
-    def run(self):
-        # Register the keyboard hook; this will run indefinitely.
-        keyboard.hook(self.event_handler.keyboard_callback)
-        keyboard.wait()  # Keeps the thread alive
-
-
-class MouseHookThread(QtCore.QThread):
-    """QThread to run the mouse listener in a separate thread.
-    """
-    def __init__(self, event_handler: InputEventHandler, parent: QtCore.QObject = None):
-        super().__init__(parent)
-        self.event_handler = event_handler
-
-    def run(self):
-        # Use pynput's mouse listener to handle click and scroll events.
-        with mouse.Listener(
-            on_click=self.event_handler.on_click,
-            on_scroll=self.event_handler.on_scroll
-        ) as listener:
-            listener.join()
-
 
 class Tray(QtWidgets.QSystemTrayIcon):
     """A system tray icon with a context menu to quit the application.
@@ -270,11 +276,11 @@ class Tray(QtWidgets.QSystemTrayIcon):
 
     # Initialization and Setup
     # ------------------------
-    def __init__(self, app: QtWidgets.QApplication, parent: QtWidgets.QWidget = None):
+    def __init__(self, widget: QtWidgets.QWidget, parent: QtWidgets.QWidget = None):
         super().__init__(TablerQIcon.mouse, parent)
 
         # Store the arguments
-        self.app = app
+        self.widget = widget
 
         # Initialize setup
         self.__init_ui()
@@ -295,7 +301,8 @@ class Tray(QtWidgets.QSystemTrayIcon):
         """
         # Show the menu on single or double click
         self.activated.connect(lambda: self.contextMenu().exec_(QtGui.QCursor.pos()))
-        self.exit_action.triggered.connect(self.app.quit)
+        self.exit_action.triggered.connect(self.widget.close)
+        self.exit_action.triggered.connect(QtWidgets.qApp.quit)
 
 
 if __name__ == "__main__":
@@ -307,19 +314,8 @@ if __name__ == "__main__":
     overlay_widget = OverlayWidget()
     overlay_widget.show()
 
-    # Create an event handler for input events
-    event_handler = InputEventHandler(overlay_widget)
-
-    # Start the keyboard hook in a separate thread
-    keyboard_thread = KeyboardHookThread(event_handler)
-    keyboard_thread.start()
-
-    # Start the mouse listener in a separate thread
-    mouse_thread = MouseHookThread(event_handler)
-    mouse_thread.start()
-
     # Create and show the system tray icon with exit functionality
-    tray = Tray(app)
+    tray = Tray(overlay_widget)
     tray.show()
 
     sys.exit(app.exec_())
