@@ -397,6 +397,7 @@ class BaseRuleWidget(QtWidgets.QWidget):
         self.add_button = QtWidgets.QPushButton(TablerQIcon.plus, "Add", self, enabled=bool(self.fields))
         self.clear_button = QtWidgets.QPushButton(TablerQIcon.clear_all, '', self, toolTip="Clear All")
         self.apply_button = QtWidgets.QPushButton("Apply", self)
+        self.apply_button.setProperty('color', 'blue')
 
         # Add Widgets to Layouts
         # ----------------------
