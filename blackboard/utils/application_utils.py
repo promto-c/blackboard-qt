@@ -10,6 +10,10 @@ import os
 import configparser
 from enum import Enum
 
+# Third Party Imports
+# -------------------
+from qtpy import QtCore, QtGui, QtWidgets
+
 
 # Class Definitions
 # -----------------
@@ -255,3 +259,38 @@ class ApplicationUtil:
 
         # Call subprocess to launch Terminal
         subprocess.Popen(commands)
+
+
+class QApplicationUtils:
+    """Utility class for handling QApplication-related operations.
+    """
+
+    @staticmethod
+    def forward_mouse_event(event: QtCore.QEvent, target: QtWidgets.QWidget) -> bool:
+        """Forwards a mouse event to a specified target widget.
+
+        This function maps the global position of the mouse event to the local
+        coordinate system of the target widget and sends the event to the target.
+
+        Args:
+            event (QtCore.QEvent): The mouse event to be forwarded. Typically an instance
+                of `QtGui.QMouseEvent`.
+            target (QtWidgets.QWidget): The target widget to which the event should be forwarded.
+
+        Returns:
+            bool: True if the event was successfully sent and handled by the target widget,
+                False otherwise.
+        """
+        if isinstance(event, QtGui.QMouseEvent):
+            mapped_event = QtGui.QMouseEvent(
+                event.type(),
+                target.mapFromGlobal(event.globalPos()),
+                event.button(),
+                event.buttons(),
+                event.modifiers(),
+            )
+        else:
+            # Use the original event as fallback (not recommended for all types)
+            mapped_event = event
+
+        return QtWidgets.QApplication.sendEvent(target, mapped_event)

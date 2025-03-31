@@ -22,6 +22,7 @@ from blackboard import widgets
 from blackboard.widgets.header_view import SearchableHeaderView
 from blackboard.utils.tree_utils import TreeUtil, TreeItemUtil
 from blackboard.utils.data_fetch_manager import FetchManager
+from blackboard.utils.application_utils import QApplicationUtils
 from blackboard.widgets.menu import ContextMenu
 from blackboard.widgets.momentum_scroll_widget import MomentumScrollTreeWidget
 
@@ -144,6 +145,12 @@ class TreeWidgetItem(QtWidgets.QTreeWidgetItem):
         """
         # Iterate through each column and set its value in the UserRole data
         for column_index, value in enumerate(item_values):
+            if isinstance(value, list):
+                # If the value is a list, set it as a TagListView widget
+                self._set_tag_list_view(column_index, value)
+            elif isinstance(value, bool):
+                check_state = QtCore.Qt.CheckState.Checked if value else QtCore.Qt.CheckState.Unchecked
+                self.setData(column_index, QtCore.Qt.ItemDataRole.CheckStateRole, check_state)
             self.set_value(column_index, value, QtCore.Qt.ItemDataRole.UserRole)
 
     def _set_tag_list_view(self, column_index: int, values: List[str]):
@@ -1286,15 +1293,7 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         """
         if isinstance(source.parentWidget(), widgets.TagListView) and isinstance(event, QtGui.QMouseEvent):
             # Forward mouse events to the viewport of the QTreeWidget
-            mapped_event = QtGui.QMouseEvent(
-                event.type(),
-                self.viewport().mapFromGlobal(event.globalPos()),
-                event.button(),
-                event.buttons(),
-                event.modifiers(),
-            )
-            # Forward the event to the tree widget
-            return QtWidgets.QApplication.sendEvent(self.viewport(), mapped_event)
+            return QApplicationUtils.forward_mouse_event(event, self.viewport())
         return super().eventFilter(source, event)
 
 
