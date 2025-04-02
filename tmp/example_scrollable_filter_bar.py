@@ -1,5 +1,5 @@
 from PyQt5 import QtWidgets, QtCore
-
+from blackboard.widgets.scroll_area import EdgeAwareScrollArea
 class FilterBarWidget(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -12,27 +12,17 @@ class FilterBarWidget(QtWidgets.QWidget):
         self.main_layout.setSpacing(6)
 
         # Scrollable filter area
-        self.scroll_area = QtWidgets.QScrollArea()
-        self.scroll_area.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
-        self.scroll_area.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.scroll_area = EdgeAwareScrollArea(self)
         self.scroll_area.setWidgetResizable(True)
-        self.scroll_area.setFrameShape(QtWidgets.QFrame.NoFrame)
 
-        self.container = QtWidgets.QWidget()
-        self.h_layout = QtWidgets.QHBoxLayout(self.container)
-        self.h_layout.setAlignment(QtCore.Qt.AlignLeft)
-        self.h_layout.setContentsMargins(0, 0, 0, 0)
-        self.h_layout.setSpacing(6)
+        self.container = self.scroll_area.container
+        self.h_layout = self.scroll_area.container_layout
 
         self.filter_layout = QtWidgets.QHBoxLayout()
-        self.filter_layout.setAlignment(QtCore.Qt.AlignLeft)
         self.filter_layout.setContentsMargins(0, 0, 0, 0)
-        self.filter_layout.setSpacing(6)
 
         self.h_layout.addLayout(self.filter_layout)
 
-        self.scroll_area.setWidget(self.container)
-        self.main_layout.addWidget(self.scroll_area)
 
         # [+] Add Filter Button (initially inside scroll area)
         self.add_button = QtWidgets.QToolButton()
@@ -52,6 +42,7 @@ class FilterBarWidget(QtWidgets.QWidget):
         # Initially button is inside
         self.h_layout.addWidget(self.add_button)
 
+        self.main_layout.addWidget(self.scroll_area)
         self.main_layout.addWidget(self.add_button_outside_container)
 
         # Timer to continuously monitor layout
@@ -146,7 +137,10 @@ class MainWidget(QtWidgets.QWidget):
 
 if __name__ == '__main__':
     import sys
+    import blackboard
+
     app = QtWidgets.QApplication(sys.argv)
+    blackboard.theme.set_theme(app, 'dark')
     window = QtWidgets.QMainWindow()
     window.setWindowTitle("Dynamic Filter Bar with Add Button")
 

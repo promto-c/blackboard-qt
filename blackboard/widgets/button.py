@@ -379,23 +379,61 @@ class ItemOverlayButton(ItemOverlay):
 
 
 class TearOffButton(QtWidgets.QPushButton):
+    """A button for detaching a widget from a menu and displaying it as a floating widget.
+
+    When clicked, this button removes its associated widget action from the parent menu and
+    displays the widget at the current cursor position with an always-on-top flag. Optionally,
+    the widget can be automatically restored to the original menu when the menu is about to be
+    shown or when the widget is closed.
+
+    Attributes:
+        LABEL (str): Default text for the button, composed of repeated colon characters.
+        TOOL_TIP (str): Tooltip message to display when hovering over the button.
+        HEIGHT (int): Fixed height of the button.
+
+    UI Wireframe:
+        [    ::::::::::::    ] -> TearOffButton
+
+                  |  (On click: detach widget)
+                  V
+        +--------------------------------------------+
+        |           Detached Widget Window           |
+        |     [Widget content is displayed here]     |
+        | (Always on top at current cursor position) |
+        +--------------------------------------------+
+    """
 
     LABEL = ': ' * 12
     TOOL_TIP = 'Click to detach the widget from the menu.'
     HEIGHT = 20
 
+    # Initialization and Setup
+    # ------------------------
     def __init__(
             self, widget_action: QtWidgets.QWidgetAction,
             text: str = LABEL, toolTip: str = TOOL_TIP,
-            auto_restore: bool = True, *args, **kwargs
+            auto_restore: bool = False, *args, **kwargs
         ):
         super().__init__(text=text, toolTip=toolTip, *args, **kwargs)
-        self.setFixedHeight(self.HEIGHT)
+
+        # Store the arguments
         self.widget_action = widget_action
         self.original_menu: QtWidgets.QMenu = widget_action.parent()
         self.widget = widget_action.defaultWidget()
         self.auto_restore = auto_restore
 
+        # Initialize setup
+        self.__init_ui()
+        self.__init_signal_connections()
+
+    def __init_ui(self):
+        """Initialize the UI of the widget.
+        """
+        self.setFixedHeight(self.HEIGHT)
+
+    def __init_signal_connections(self):
+        """Initialize signal-slot connections.
+        """
         # Connect the tear off action on click
         self.clicked.connect(self.tear_off)
 
@@ -403,7 +441,11 @@ class TearOffButton(QtWidgets.QPushButton):
         if self.auto_restore:
             self.original_menu.aboutToShow.connect(self.restore_widget_action)
 
+    # Public Methods
+    # --------------
     def tear_off(self):
+        """Detach the associated widget from its parent menu and display it as a floating widget.
+        """
         if not self.widget:
             return
 
@@ -413,20 +455,14 @@ class TearOffButton(QtWidgets.QPushButton):
 
         # Set the always-on-top flag for the detached widget.
         current_flags = self.widget.windowFlags()
-        self.widget.setWindowFlags(current_flags | QtCore.Qt.WindowStaysOnTopHint)
+        self.widget.setWindowFlags(current_flags | QtCore.Qt.WindowType.WindowStaysOnTopHint)
 
-        # If re-add functionality is enabled, install an event filter to catch the close event.
+        # If auto restore is enabled, install an event filter to catch the close event.
         if self.auto_restore:
             self.widget.installEventFilter(self)
-        self.widget.show()
 
-    def eventFilter(self, obj, event):
-        # Intercept the close event of the detached widget.
-        if obj == self.widget and event.type() == QtCore.QEvent.Close:
-            self.original_menu.addAction(self.widget_action)
-            # Clean up the event filter.
-            self.widget.removeEventFilter(self)
-        return super().eventFilter(obj, event)
+        # Show as a floating widget
+        self.widget.show()
 
     def restore_widget_action(self):
         """Restore the widget action in the original menu if it was removed.
@@ -438,9 +474,30 @@ class TearOffButton(QtWidgets.QPushButton):
             self.widget.removeEventFilter(self)
         self.original_menu.addAction(self.widget_action)
 
+    # Overridden Methods
+    # ------------------
+    def eventFilter(self, obj, event: QtCore.QEvent):
+        """Handle close event of the detached widget.
+        """
+        # Intercept the close event of the detached widget.
+        if obj == self.widget and event.type() == QtCore.QEvent.Type.Close:
+            self.original_menu.addAction(self.widget_action)
+            # Clean up the event filter.
+            self.widget.removeEventFilter(self)
+        return super().eventFilter(obj, event)
+
 
 class TearOffWidgetAction(QtWidgets.QWidgetAction):
-    def __init__(self, widget_action: QtWidgets.QWidgetAction, auto_restore: bool = True, *args, **kwargs):
+    """Wraps a TearOffButton to detach a widget from its menu.
+    """
+
+    def __init__(self, widget_action: QtWidgets.QWidgetAction, auto_restore: bool = False, *args, **kwargs):
+        """Initialize the TearOffWidgetAction.
+
+        Args:
+            widget_action (QtWidgets.QWidgetAction): The widget action that contains the widget to be detached.
+            auto_restore (bool): If True, automatically restore the widget to its menu when the menu is about to be shown.
+        """
         super().__init__(widget_action.parent(), *args, **kwargs)
         tear_off_button = TearOffButton(widget_action, auto_restore=auto_restore)
         self.setDefaultWidget(tear_off_button)

@@ -23,6 +23,7 @@ from blackboard.widgets.line_edit import LineEdit
 from blackboard.widgets.calendar_widget import CalendarSelectionMode, RangeCalendarWidget
 from blackboard.enums.view_enum import FilterOperation, FieldType, FilterMode, DateRange
 from blackboard.widgets.button import TearOffWidgetAction
+from blackboard.widgets.scroll_area import EdgeAwareScrollArea
 
 
 # Class Definitions
@@ -432,28 +433,35 @@ class FilterButton(QtWidgets.QPushButton):
     def set_filter_widget(self, filter_widget: 'FilterWidget'):
         """Set the popup menu for the filter button.
         """
+        # Disconnect previously stored signal-slot connections
         for object, connection in self._object_to_connection_pairs:
             object.disconnect(connection)
         self._object_to_connection_pairs.clear()
 
+        # Update the internal filter widget and clear existing menu entries
         self._filter_widget = filter_widget
         self.popup_menu.clear()
 
+        # If no filter widget is provided, exit early
         if not self._filter_widget:
             return
 
-        # Update the popup menu with the new filter widget
+        # Create a widget action for the filter widget
         action = QtWidgets.QWidgetAction(self.popup_menu)
         action.setDefaultWidget(self._filter_widget)
-        tear_off_widget_action = TearOffWidgetAction(action)
+        # Wrap the widget action in a TearOffWidgetAction for detachable behavior
+        tear_off_widget_action = TearOffWidgetAction(action, auto_restore=True)
+        # Add both the tear-off action and the filter widget action to the popup menu
         self.popup_menu.addAction(tear_off_widget_action)
         self.popup_menu.addAction(action)
 
+        # Connect signal-slot and store them for future disconnection
         resized_connection = self.popup_menu.resized.connect(self._filter_widget.setMinimumSize)
         self._object_to_connection_pairs.append((self.popup_menu, resized_connection))
         icon_changed_connection = self._filter_widget.windowIconChanged.connect(self.setIcon)
         self._object_to_connection_pairs.append((self._filter_widget, icon_changed_connection))
 
+        # Set filter button icon with widget's icon
         self.setIcon(self._filter_widget.windowIcon())
 
     def setText(self, text: str):

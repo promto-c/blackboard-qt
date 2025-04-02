@@ -1,6 +1,6 @@
 # Type Checking Imports
 # ---------------------
-from typing import TYPE_CHECKING, Any, Dict, Iterable, Optional, Union
+from typing import TYPE_CHECKING, Any, Dict, Iterable, Optional, Union, Set
 if TYPE_CHECKING:
     from blackboard.utils.database import AbstractModel, DatabaseManager, ManyToManyField, FieldInfo
     from blackboard.widgets.groupable_tree_widget import TreeWidgetItem
@@ -666,6 +666,7 @@ class DatabaseViewWidget(DataViewWidget):
         """
         self._base_model = None
         self._database = None
+        self._additional_fields: Set[str] = set()
 
         if self.db_manager:
             self.set_database_manager(self.db_manager)
@@ -874,18 +875,60 @@ class DatabaseViewWidget(DataViewWidget):
         if filter_widget:
             self.add_filter_widget(filter_widget)
 
-    # TODO: Add a reference to the view to query this added relation column when fetching more data.
-    def add_field(self, field_chain: str):
-        """Add a field to the tree widget.
+    def add_field(self, field_name: str):
+        """Add a field to the tree widget logically and adjust its visual order if it's a relation field.
         """
+        # Add to the internal set of additional fields
+        self._additional_fields.add(field_name)
         field_names = self.tree_widget.fields.copy()
 
-        # Check if the field already exists
-        if field_chain in field_names:
-            return
-        field_names.append(field_chain)
-        self.tree_widget.setHeaderLabels(field_names)
+        # If the field already exists, do nothing
+        if field_name in field_names:
+            field_index = self.tree_widget.get_column_index(field_name)
+            if self.tree_widget.isColumnHidden(field_index):
+                self.tree_widget.setColumnHidden(field_index, False)
+                self.populate()
+        else:
+            # Append the field logically (logical order remains unchanged)
+            field_names.append(field_name)
+            self.tree_widget.setHeaderLabels(field_names)
+            self.populate()
 
+        # Adjust visual order if it's a relation field
+        self._adjust_visual_order(field_name)
+
+    def _adjust_visual_order(self, field_name: str):
+        """Adjust the visual order of a relation field so it appears immediately after its base field.
+        """
+        if '.' not in field_name:
+            return
+
+        # Extract the base field (e.g., 'address' from 'address.city')
+        base_field = field_name.rsplit('.', 1)[0]
+        header = self.tree_widget.header()
+
+        try:
+            # Get current visual indexes for both fields
+            base_visual_index = self.tree_widget.get_column_visual_index(base_field)
+            new_field_visual_index = self.tree_widget.get_column_visual_index(field_name)
+            # Determine the target index based on the relative positions
+            if new_field_visual_index < base_visual_index:
+                target_index = base_visual_index
+            else:
+                target_index = base_visual_index + 1
+            # Move the new field visually if it's not already in the target position
+            if new_field_visual_index != target_index:
+                header.moveSection(new_field_visual_index, target_index)
+        except Exception as e:
+            # Log or handle the error if the base field is not found or move fails
+            print("Error adjusting visual order:", e)
+
+    def add_fields(self, field_names: Set[str]):
+        self._additional_fields.update(field_names)
+        current_field_names = self.tree_widget.fields.copy()
+        current_field_names.extend(field_names)
+
+        self.tree_widget.setHeaderLabels(current_field_names)
         self.populate()
 
     def populate(self):
@@ -894,6 +937,16 @@ class DatabaseViewWidget(DataViewWidget):
             conditions=self.filter_bar_widget.get_query_conditions(),
         )
         self.tree_widget.set_generator(generator)
+
+    def save_state(self, settings, group_name = 'database_view'):
+        settings.setValue('additional_fields', self._additional_fields)
+        return super().save_state(settings, group_name)
+    
+    def load_state(self, settings, group_name = 'database_view'):
+        additional_fields = settings.value('additional_fields', set())
+        if additional_fields:
+            self.add_fields(additional_fields)
+        return super().load_state(settings, group_name)
 
 
 # Main Function
