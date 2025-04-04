@@ -331,15 +331,13 @@ class SQLQueryBuilder:
 
     @staticmethod
     def build_join_clause(base_model: str, fields: List[str], relationships: Dict[str, str], sep: str = CHAIN_SEPARATOR) -> str:
-        """Build the JOIN part of the query.
+        """Build the complete JOIN clause of the query by iterating over the required relation chains.
 
         Args:
-            base_model (str): The base table/model for the current query, e.g. "Tasks".
-            fields (List[str]): A list of hierarchical field strings, 
-                e.g. ["shot.sequence.project.name", "shot.name", "status"].
-            relationships (Dict[str, str]): A dictionary of relationships between tables,
-                e.g. {"Tasks.shot": "Shots.id", "Shots.sequence": "Sequences.id"}.
-            sep (str): Separator used for hierarchy splitting. Default is '.'.
+            base_model (str): The base table/model for the query (e.g. "Tasks").
+            fields (List[str]): A list of hierarchical field strings, e.g. ["shot.sequence.project.name", "shot.name", "status"].
+            relationships (Dict[str, str]): A dictionary mapping relationships between tables.
+            sep (str): The separator used in the hierarchical field names.
 
         Returns:
             str: The JOIN clause in SQL format.
@@ -360,53 +358,20 @@ class SQLQueryBuilder:
 LEFT JOIN\\n\\tSequences AS 'shot.sequence' ON 'shot'.sequence = 'shot.sequence'.id\\n\
 LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 'shot.sequence.project'.id"
         """
-        # 1) Gather all chain prefixes that need to be joined up to (but not including) the final leaf
-        #    For example, "shot.sequence" is taken from "shot.sequence.project.name"
-        #    We apply prune_leaves=1 so "project.name" => "project" is recognized, but not "name" alone.
+        # 1) Gather all chain prefixes that need to be joined.
+        # We use prune_leaves=1 so that for a field like "shot.sequence.project.name" we get "shot", "shot.sequence", and "shot.sequence.project"
         relation_chains = SQLQueryBuilder.propagate_hierarchies(fields, sep=sep, prune_leaves=1)
         if not relation_chains:
-            return
-
-        # Maps a chain prefix (e.g. "shot" or "shot.sequence") to the table name (e.g. "Shots", "Sequences")
-        relation_chain_to_table: Dict[str, str] = {}
-
-        # 2) Build the JOIN statements for each relation_chain
+            return ""
+        
+        # 2) For each chain, build the JOIN clause using the helper method.
         join_clauses = []
         for chain in relation_chains:
-            # If there's no separator in this chain (single token), then it's directly from the base model.
-            left_model_field = SQLQueryBuilder.resolve_model_field(base_model, chain, relationships)
-
-            # `relationships` dict should map that to e.g. "Shots.id" => right_model_field
-            # which we then parse into e.g. right_model="Shots", right_field="id"
-            right_model_field = relationships[left_model_field]
-            right_model, right_field = SQLQueryBuilder._parse_relationship(right_model_field, sep=sep)
-
-            # On the left side, we might need to reference the base model or a previous alias
-            right_table_alias = f"'{chain}'"
-            right_field_alias = f'{right_table_alias}{sep}{right_field}'
-
-            # Build the LEFT JOIN snippet
-            if right_model_field in relationships:
-                # NOTE: Handle indirect relational fields, such as one-to-many relationships.
-                a, _ = SQLQueryBuilder._parse_relationship(SQLQueryBuilder._build_inner_alias(chain), sep=sep)
-                _, b = SQLQueryBuilder._parse_relationship(relationships[right_model_field], sep=sep)
-                left_field_alias = f'{a}{sep}{b}'
-            else:
-                left_field_alias = SQLQueryBuilder._build_inner_alias(chain, sep=sep)
-
-            # Store the discovered right_model in relation_chain_to_table, so future children
-            # of this chain know which table they come from.
-            relation_chain_to_table[chain] = right_model
-
-            # "LEFT JOIN Shots AS 'shot' ON _.shot = 'shot'.id"
-            join_clause = (
-                f"LEFT JOIN\n\t{right_model} AS {right_table_alias} "
-                f"ON {left_field_alias} = {right_field_alias}"
-            )
+            join_clause = SQLQueryBuilder._build_join_clause_for_chain(chain, base_model, relationships, sep)
             join_clauses.append(join_clause)
-
-        # 3) Return them as a single multi-line string
-        return '\n'.join(join_clauses)
+        
+        # 3) Return the JOIN clauses as a single multi-line string.
+        return "\n".join(join_clauses)
 
     @staticmethod
     def build_where_clause(base_model: str = None,
@@ -544,8 +509,8 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
 
         return where_clauses_str, fields, parameters
 
-    @staticmethod
-    def build_order_by_clause(order_by: Dict[str, SortOrder]) -> str:
+    @classmethod
+    def build_order_by_clause(cls, order_by: Dict[str, SortOrder]) -> str:
         """Build the ORDER BY clause of the query.
 
         Args:
@@ -573,7 +538,7 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
         # Ensure that the input for order_by values are `SortOrder` or strings
         return ", ".join(
             [
-                f"{SQLQueryBuilder._build_inner_alias(field)} {str(direction).upper()}"
+                f"{SQLQueryBuilder._build_inner_alias(field)} {cls._normalize_sort_order(direction)}"
                 for field, direction in order_by.items()
             ]
         )
@@ -665,6 +630,65 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
         return context
 
     @staticmethod
+    def _build_join_clause_for_chain(chain: str, base_model: str, relationships: Dict[str, str], sep: str = CHAIN_SEPARATOR) -> str:
+        """
+        Build a LEFT JOIN clause for a single relation chain.
+
+        Args:
+            chain (str): The relation chain prefix (e.g. "shot" or "shot.sequence").
+            base_model (str): The base table/model name.
+            relationships (Dict[str, str]): Mapping of relationships.
+            sep (str): The separator used in the chain.
+
+        Returns:
+            str: The LEFT JOIN clause for this chain.
+        """
+        # Resolve the left model field from the base model and relation chain.
+        left_model_field = SQLQueryBuilder.resolve_model_field(base_model, chain, relationships)
+        # Get the corresponding right model field (e.g. "Shots.id") from relationships.
+        right_model_field = relationships[left_model_field]
+        # Parse the right model and its field.
+        right_model, right_field = SQLQueryBuilder._parse_relationship(right_model_field, sep=sep)
+        
+        # Build the alias for the join table using the chain.
+        right_table_alias = f"'{chain}'"
+        right_field_alias = f"{right_table_alias}{sep}{right_field}"
+        
+        # Determine the left side alias.
+        # The following conditional is used to handle indirect relationships (such as one-to-many),
+        # so that the correct alias is produced.
+        if right_model_field in relationships:
+            a, _ = SQLQueryBuilder._parse_relationship(SQLQueryBuilder._build_inner_alias(chain), sep=sep)
+            _, b = SQLQueryBuilder._parse_relationship(relationships[right_model_field], sep=sep)
+            left_field_alias = f"{a}{sep}{b}"
+        else:
+            left_field_alias = SQLQueryBuilder._build_inner_alias(chain, sep=sep)
+        
+        # Construct the LEFT JOIN clause.
+        join_clause = (
+            f"LEFT JOIN\n\t{right_model} AS {right_table_alias} "
+            f"ON {left_field_alias} = {right_field_alias}"
+        )
+        return join_clause
+
+    # TODO: Implement
+    @staticmethod
+    def _build_group_by_clause(chain: str, base_model: str, relationships: Dict[str, str], sep: str = CHAIN_SEPARATOR) -> str:
+        """
+
+        Returns:
+            str: The LEFT JOIN clause for this chain.
+        """
+        ...
+
+    @staticmethod
+    def _normalize_sort_order(sort_order: Union['SortOrder', str, int]) -> str:
+        if isinstance(sort_order, int):
+            # In PyQt, 0 is AscendingOrder and 1 is DescendingOrder
+            return "ASC" if sort_order == 0 else "DESC" if sort_order == 1 else str(sort_order).upper()
+        return str(sort_order).upper()
+
+    @staticmethod
     def _extract_key_value_pairs(data: str | Tuple[str, Any] | Dict[str, Any] | Iterable[Any], 
                                  keys_only: bool = False
                                  ) -> Generator[Tuple[str, Any] | str, None, None]:
@@ -733,9 +757,13 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
         if sep not in field:
             return False
         parent_field, _ = SQLQueryBuilder._parse_relationship(field)
-        relation_chain = f'{base_model}{sep}{parent_field}'
+        relation_chain = SQLQueryBuilder.resolve_model_field(
+            base_model=base_model, field_chain=parent_field, relationships=relationships, sep=sep
+        )
+
         if relation_chain not in relationships:
             return False
+
         return relationships[relation_chain] in relationships
 
     @staticmethod
@@ -770,6 +798,7 @@ if __name__ == "__main__":
 
     fields = [
         "shot.sequence.project.name",
+        "shot.sequence.project.assets_project.name",
         "shot.name",
         "name",
         "status",
@@ -777,8 +806,8 @@ if __name__ == "__main__":
         "start_date",
         "due_date",
         "assigned_to.email",
-        "assets.name",      # Indirect relational field
-        "child_tasks.name", # Indirect relational field
+        "assets_task.name",     # Indirect relational field
+        "child_tasks.name",     # Indirect relational field
     ]
 
     conditions = {
@@ -795,9 +824,10 @@ if __name__ == "__main__":
         "Sequences.project": "Projects.id",
         "Tasks.assigned_to": "Users.id",
         "Tasks.parent_task": "Tasks.id",
-        # TODO: Update to support reference fields for one-to-many relationships
-        "Tasks.child_tasks": "Tasks.parent_task",   # Indirect relational field
-        "Tasks.assets": "Assets.task",  # Indirect relational field
+        "Assets.project": "Projects.id",
+        "Tasks.child_tasks": "Tasks.parent_task",       # Indirect relational field
+        "Tasks.assets_task": "Assets.task",             # Indirect relational field
+        "Projects.assets_project": "Assets.project",    # Indirect relational field
         "Assets.task": "Tasks.id",
     }
 
@@ -819,6 +849,7 @@ if __name__ == "__main__":
     # NOTE: Example outputs
     # SELECT
     #         'shot.sequence.project'.name AS 'shot.sequence.project.name',
+    #         JSON_GROUP_ARRAY('shot.sequence.project.assets_project'.name) AS 'shot.sequence.project.assets_project.name',
     #         'shot'.name AS 'shot.name',
     #         _.name AS 'name',
     #         _.status AS 'status',
@@ -826,11 +857,16 @@ if __name__ == "__main__":
     #         _.start_date AS 'start_date',
     #         _.due_date AS 'due_date',
     #         'assigned_to'.email AS 'assigned_to.email',
-    #         JSON_GROUP_ARRAY('assets'.name) AS 'assets.name'
+    #         JSON_GROUP_ARRAY('assets_task'.name) AS 'assets_task.name',
+    #         JSON_GROUP_ARRAY('child_tasks'.name) AS 'child_tasks.name'
     # FROM
     #         'Tasks' AS _
     # LEFT JOIN
+    #         Assets AS 'assets_task' ON _.id = 'assets_task'.task
+    # LEFT JOIN
     #         Users AS 'assigned_to' ON _.assigned_to = 'assigned_to'.id
+    # LEFT JOIN
+    #         Tasks AS 'child_tasks' ON _.id = 'child_tasks'.parent_task
     # LEFT JOIN
     #         Tasks AS 'parent_task' ON _.parent_task = 'parent_task'.id
     # LEFT JOIN
@@ -840,9 +876,12 @@ if __name__ == "__main__":
     # LEFT JOIN
     #         Projects AS 'shot.sequence.project' ON 'shot.sequence'.project = 'shot.sequence.project'.id
     # LEFT JOIN
-    #         Assets AS 'assets' ON _.id = 'assets'.task GROUP BY _.id
+    #         Assets AS 'shot.sequence.project.assets_project' ON 'shot.sequence.project'.id = 'shot.sequence.project.assets_project'.project
     # WHERE
     #         ('shot.sequence.project'.name LIKE '%' || ? || '%' OR 'shot'.status = ? OR 'assigned_to'.role = ?)
+    # GROUP BY
+    #         assets_task.name, child_tasks.name, shot.sequence.project.assets_project.name
+    #         NOTE: _.id, 'shot.sequence.project'.id
     # ORDER BY
     #         'shot'.name DESC, _.name ASC
     # LIMIT

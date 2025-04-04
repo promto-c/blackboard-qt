@@ -49,7 +49,7 @@ class ContextAwareRow(sqlite3.Row):
         if not serializer:
             return value
 
-        if value in context.grouped_fields:
+        if key in context.grouped_fields:
             value = [serializer.deserialize(v) for v in value]
         else:
             value = serializer.deserialize(value)

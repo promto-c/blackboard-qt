@@ -51,7 +51,6 @@ class DataFetcher(QtCore.QObject):
         #       This approach avoids issues with concurrent task handling, ensuring each task is stopped 
         #       before starting a new one, and prevents old tasks from running after a new task begins.
         self._current_tasks: Deque[GeneratorWorker] = deque()
-        self._result_connection = None
 
     # Public Methods
     # --------------
@@ -83,8 +82,7 @@ class DataFetcher(QtCore.QObject):
         """Stop the current data fetching task."""
         while self._current_tasks:
             task = self._current_tasks.popleft()
-            task.result.disconnect(self._result_connection)
-            self._result_connection = None
+            task.result.disconnect()
             task.stop()
 
     # Private Methods
@@ -103,7 +101,7 @@ class DataFetcher(QtCore.QObject):
         # Create the current_task
         task = GeneratorWorker(items_to_fetch, desired_size=batch_size)
         # Connect signals
-        self._result_connection = task.result.connect(self._on_data_fetched)
+        task.result.connect(self._on_data_fetched)
         task.started.connect(self.started.emit)
         task.finished.connect(self._on_task_finished)
         task.loaded_all.connect(self._handle_no_more_items)

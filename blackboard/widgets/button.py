@@ -410,7 +410,7 @@ class TearOffButton(QtWidgets.QPushButton):
     # Initialization and Setup
     # ------------------------
     def __init__(
-            self, widget_action: QtWidgets.QWidgetAction,
+            self, widget_action: QtWidgets.QWidgetAction, menu: QtWidgets.QMenu = None,
             text: str = LABEL, toolTip: str = TOOL_TIP,
             auto_restore: bool = False, *args, **kwargs
         ):
@@ -418,7 +418,7 @@ class TearOffButton(QtWidgets.QPushButton):
 
         # Store the arguments
         self.widget_action = widget_action
-        self.original_menu: QtWidgets.QMenu = widget_action.parent()
+        self.original_menu = menu or widget_action.parent()
         self.widget = widget_action.defaultWidget()
         self.auto_restore = auto_restore
 
@@ -491,7 +491,7 @@ class TearOffWidgetAction(QtWidgets.QWidgetAction):
     """Wraps a TearOffButton to detach a widget from its menu.
     """
 
-    def __init__(self, widget_action: QtWidgets.QWidgetAction, auto_restore: bool = False, *args, **kwargs):
+    def __init__(self, widget_action: QtWidgets.QWidgetAction, menu: QtWidgets.QMenu = None, auto_restore: bool = False, *args, **kwargs):
         """Initialize the TearOffWidgetAction.
 
         Args:
@@ -499,7 +499,7 @@ class TearOffWidgetAction(QtWidgets.QWidgetAction):
             auto_restore (bool): If True, automatically restore the widget to its menu when the menu is about to be shown.
         """
         super().__init__(widget_action.parent(), *args, **kwargs)
-        tear_off_button = TearOffButton(widget_action, auto_restore=auto_restore)
+        tear_off_button = TearOffButton(widget_action, menu=menu, auto_restore=auto_restore)
         self.setDefaultWidget(tear_off_button)
 
 

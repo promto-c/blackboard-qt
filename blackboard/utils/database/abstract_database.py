@@ -433,6 +433,9 @@ class AbstractModel(ABC):
         """Get a list of unique fields in the table."""
         pass
 
+    def __str__(self) -> str:
+        return self._name
+
 
 if __name__ == '__main__':
     import doctest

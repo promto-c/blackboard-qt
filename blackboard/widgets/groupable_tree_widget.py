@@ -25,6 +25,7 @@ from blackboard.utils.data_fetch_manager import FetchManager
 from blackboard.utils.application_utils import QApplicationUtils
 from blackboard.widgets.menu import ContextMenu
 from blackboard.widgets.momentum_scroll_widget import MomentumScrollTreeWidget
+from blackboard.widgets.button import TearOffWidgetAction
 
 
 # Class Definitions
@@ -451,6 +452,7 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
     reload_requested = QtCore.Signal()
     field_changed = QtCore.Signal()
     field_visibility_changed = QtCore.Signal(int, bool)
+    sort_reset = QtCore.Signal()
 
     # Initialization and Setup
     # ------------------------
@@ -721,6 +723,27 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
             int: The logical index of the visual index.
         """
         return self.header().logicalIndex(visual_index)
+
+    def get_sort_order(self) -> Dict[str, QtCore.Qt.SortOrder]:
+        if not self.isSortingEnabled():
+            return
+
+        header = self.header()
+        sort_column = header.sortIndicatorSection()
+        sort_order = header.sortIndicatorOrder()
+
+        # Determine the field to sort by based on the sort column.
+        # Ensure that sort_column is valid.
+        if not 0 <= sort_column < len(self.fields):
+            return
+
+        sort_field = self.fields[sort_column]
+        return {sort_field: sort_order}
+
+    def reset_sorting(self):
+        self.setSortingEnabled(False)
+        self.sort_reset.emit()
+        self.setSortingEnabled(True)
 
     # TODO: Handle id or primary key
     def add_items(self, data_dicts: List[Dict[str, Any]], parent: Optional[QtWidgets.QTreeWidgetItem] = None):
@@ -1118,8 +1141,11 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         self.column_management_widget = ColumnManagementWidget(self)
         column_management_widget_action = QtWidgets.QWidgetAction(self)
         column_management_widget_action.setDefaultWidget(self.column_management_widget)
+        tear_off_widget_action = TearOffWidgetAction(column_management_widget_action, menu=show_hide_column_menu, auto_restore=True)
+        show_hide_column_menu.addAction(tear_off_widget_action)
         show_hide_column_menu.addAction(column_management_widget_action)
         hide_this_column = manage_columns_section_action.addAction(text='Hide This Column')
+        reset_sorting = manage_columns_section_action.addAction(text='Reset Sorting')
 
         # Connect actions to their corresponding methods
         self.group_by_action.triggered.connect(lambda: self.group_by(self._selected_field))
@@ -1128,6 +1154,7 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         reset_all_color_adaptive_action.triggered.connect(self.clear_color_adaptive)
         fit_column_in_view_action.triggered.connect(self.fit_column_in_view)
         hide_this_column.triggered.connect(lambda: self.hideColumn(self._selected_field))
+        reset_sorting.triggered.connect(self.reset_sorting)
 
     def _show_header_context_menu(self, pos: QtCore.QPoint):
         """Show a context menu for the header of the tree widget.

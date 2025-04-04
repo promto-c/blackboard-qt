@@ -697,6 +697,8 @@ class DatabaseViewWidget(DataViewWidget):
         self.tree_widget.field_visibility_changed.connect(self.populate)
 
         self.tree_widget.field_changed.connect(self.update_add_filter_menu)
+        self.tree_widget.header().sortIndicatorChanged.connect(lambda index, order: self.populate())
+        self.tree_widget.sort_reset.connect(self.populate)
 
         # NOTE: WIP
         self.add_functional_column_action.triggered.connect(self.open_functional_column_dialog)
@@ -932,9 +934,12 @@ class DatabaseViewWidget(DataViewWidget):
         self.populate()
 
     def populate(self):
+        """Populate the tree widget with data from the model.
+        """
         generator = self._base_model.query(
             fields=self.tree_widget.shown_fields,
             conditions=self.filter_bar_widget.get_query_conditions(),
+            order_by=self.tree_widget.get_sort_order(),
         )
         self.tree_widget.set_generator(generator)
 
@@ -1019,4 +1024,6 @@ def main():
     sys.exit(app.exec())
 
 if __name__ == '__main__':
-    main()
+    # main()
+    print(QtCore.Qt.SortOrder.AscendingOrder)
+    print(QtCore.Qt.SortOrder.DescendingOrder)
