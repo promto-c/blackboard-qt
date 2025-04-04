@@ -17,7 +17,7 @@ class AnimatedButton(QtWidgets.QPushButton):
         self.default_text = text
         self.hover_text = hover_text or text
         self.animation_duration = duration  # Milliseconds
-        self.default_color = QtGui.QColor(33, 33, 33)
+        self.default_color = QtGui.QColor('#444')
         self.hover_color = hover_color
         self._color = self.default_color  # Initialize the color property
 
@@ -181,6 +181,7 @@ class AnimatedButton(QtWidgets.QPushButton):
         super().leaveEvent(event)
         self.leaved.emit()
 
+
 class DataFetchingButtons(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -201,12 +202,6 @@ class DataFetchingButtons(QtWidgets.QWidget):
         self.setFixedWidth(220)
         self.setMaximumWidth(220)
 
-        # Create Layouts
-        # --------------
-        layout = QtWidgets.QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(12)
-
         # Create Widgets
         # --------------
         # Initialize the "Fetch More" button and "Fetch All" button
@@ -215,20 +210,23 @@ class DataFetchingButtons(QtWidgets.QWidget):
             text='Fetch More',
             hover_icon=self.tabler_icon.chevrons_down,
             hover_color=QtGui.QColor("#178"),
-            parent=self)
+            parent=self
+        )
         self.fetch_all_button = AnimatedButton(
             icon=self.tabler_icon.arrow_down_to_arc,
             text='Fetch All',
             hover_icon=self.tabler_icon.arrow_bar_to_down,
             hover_color=QtGui.QColor("#187"),
-            parent=self)
+            parent=self
+        )
         self.stop_fetch_button = AnimatedButton(
             icon=self.tabler_icon.loader,
             text='Fetching',
             hover_icon=self.tabler_icon.x,
             hover_text='Stop',
             hover_color=QtGui.QColor("#A45"),
-            parent=self)
+            parent=self
+        )
         self.stop_fetch_button.set_animate_text()
         self.stop_fetch_button.hide()
 
@@ -241,6 +239,9 @@ class DataFetchingButtons(QtWidgets.QWidget):
 
         # Add Widgets to Layouts
         # ----------------------
+        layout = QtWidgets.QHBoxLayout(self, spacing=12)
+        layout.setContentsMargins(0, 0, 0, 0)
+
         layout.addWidget(self.fetch_more_button)
         layout.addWidget(self.fetch_all_button)
         layout.addWidget(self.stop_fetch_button)
@@ -251,18 +252,6 @@ class DataFetchingButtons(QtWidgets.QWidget):
         # Connect the hover signal from fetch_more_button to show fetch_all_button
         self.fetch_all_button.entered.connect(self.show_fetch_all_button)
         self.fetch_all_button.leaved.connect(self.hide_fetch_all_button)
-
-        # self.fetch_more_button.clicked.connect(self.fetch_more_button.hide)
-        # self.fetch_more_button.clicked.connect(self.fetch_all_button.hide)
-        # self.fetch_more_button.clicked.connect(self.stop_fetch_button.show)
-
-        # self.fetch_all_button.clicked.connect(self.fetch_more_button.hide)
-        # self.fetch_all_button.clicked.connect(self.fetch_all_button.hide)
-        # self.fetch_all_button.clicked.connect(self.stop_fetch_button.show)
-
-        # self.stop_fetch_button.clicked.connect(self.stop_fetch_button.hide)
-        # self.stop_fetch_button.clicked.connect(self.fetch_more_button.show)
-        # self.stop_fetch_button.clicked.connect(self.fetch_all_button.show)
 
     def show_fetch_all_button(self):
         """Show the 'Fetch All' button.
@@ -275,6 +264,7 @@ class DataFetchingButtons(QtWidgets.QWidget):
         """
         self.fetch_all_button.collapse()
         self.fetch_more_button.expand()
+
 
 class InlineConfirmButton(QtWidgets.QWidget):
 
@@ -366,6 +356,7 @@ class InlineConfirmButton(QtWidgets.QWidget):
                 self.__toggle_buttons()
         
         return super().eventFilter(obj, event)
+
 
 class ItemOverlayButton(ItemOverlay):
 

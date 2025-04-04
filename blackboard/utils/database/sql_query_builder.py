@@ -543,8 +543,8 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
             ]
         )
 
-    @staticmethod
-    def build_context(model: str, fields = None, conditions = None, relationships = None,
+    @classmethod
+    def build_context(cls, model: str, fields = None, conditions = None, relationships = None,
                       order_by: Optional[Dict[str, SortOrder]] = None, limit: int = None,
                       serializers: Optional[Dict[str, 'DataSerializer']] = None, distinct: bool = False,
                       ) -> 'QueryContext':
@@ -593,19 +593,19 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
             ['admin']
         """
         # NOTE: Handle indirect relational fields, such as one-to-many relationships.
-        field_to_alias_pairs = list(SQLQueryBuilder._extract_key_value_pairs(fields))
+        field_to_alias_pairs = list(cls._extract_key_value_pairs(fields))
         grouped_fields = set(
             field
             for field, _alias in field_to_alias_pairs
-            if SQLQueryBuilder._is_one_to_many_field(model, field, relationships)
+            if cls._is_one_to_many_field(model, field, relationships)
         )
-        group_by_clause = ', '.join(grouped_fields)
 
-        select_clause = SQLQueryBuilder.build_select_clause(field_to_alias_pairs, grouped_fields)
-        where_clause, where_fields, parameters = SQLQueryBuilder.build_where_clause(model, conditions, relationships=relationships, serializers=serializers)
+        select_clause = cls.build_select_clause(field_to_alias_pairs, grouped_fields)
+        where_clause, where_fields, parameters = cls.build_where_clause(model, conditions, relationships=relationships, serializers=serializers)
+        group_by_clause = cls.build_group_by_clause(grouped_fields, model, relationships)
         fields = list(fields or []) + list(where_fields or [])
-        join_clause = SQLQueryBuilder.build_join_clause(model, fields, relationships)
-        order_by_clause = SQLQueryBuilder.build_order_by_clause(order_by)
+        join_clause = cls.build_join_clause(model, fields, relationships)
+        order_by_clause = cls.build_order_by_clause(order_by)
 
         query_clauses = [
             f"SELECT{' DISTINCT' if distinct else ''}\n\t{select_clause}",
@@ -655,8 +655,6 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
         right_field_alias = f"{right_table_alias}{sep}{right_field}"
         
         # Determine the left side alias.
-        # The following conditional is used to handle indirect relationships (such as one-to-many),
-        # so that the correct alias is produced.
         if right_model_field in relationships:
             a, _ = SQLQueryBuilder._parse_relationship(SQLQueryBuilder._build_inner_alias(chain), sep=sep)
             _, b = SQLQueryBuilder._parse_relationship(relationships[right_model_field], sep=sep)
@@ -671,15 +669,49 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
         )
         return join_clause
 
-    # TODO: Implement
     @staticmethod
-    def _build_group_by_clause(chain: str, base_model: str, relationships: Dict[str, str], sep: str = CHAIN_SEPARATOR) -> str:
-        """
+    def build_group_by_clause(group_fields: Set[str], base_model: str, relationships: Dict[str, str], sep: str = CHAIN_SEPARATOR) -> str:
+        """Build the GROUP BY clause for the query.
+
+        Args:
+            group_fields (Set[str]): A set of fields to group by.
+            base_model (str): The base model for the query.
+            relationships (Dict[str, str]): A dictionary mapping relationships between models.
+            sep (str): The separator used in the hierarchical field names.
 
         Returns:
-            str: The LEFT JOIN clause for this chain.
+            str: The GROUP BY clause in SQL format.
+
+        Examples:
+            >>> SQLQueryBuilder.build_group_by_clause(
+            ...     group_fields={"shot.sequence.project.assets_project.name"},
+            ...     base_model="Tasks",
+            ...     relationships={
+            ...         "Tasks.shot": "Shots.id",
+            ...         "Shots.sequence": "Sequences.id",
+            ...         "Sequences.project": "Projects.id",
+            ...         "Assets.project": "Projects.id",
+            ...         "Projects.assets_project": "Assets.project",
+            ...     }
+            ... )
+            "'shot.sequence.project'.id"
         """
-        ...
+        group_by_clauses = set()
+        for field in group_fields:
+            parent_chain, _ = SQLQueryBuilder._parse_relationship(field, sep=sep)
+
+            # Resolve the left model field from the base model and relation chain.
+            left_model_field = SQLQueryBuilder.resolve_model_field(base_model, parent_chain, relationships)
+            # Get the corresponding right model field (e.g. "Shots.id") from relationships.
+            right_model_field = relationships[left_model_field]
+
+            a, _ = SQLQueryBuilder._parse_relationship(SQLQueryBuilder._build_inner_alias(parent_chain), sep=sep)
+            _, b = SQLQueryBuilder._parse_relationship(relationships[right_model_field], sep=sep)
+            left_field_alias = f"{a}{sep}{b}"
+
+            group_by_clauses.add(left_field_alias)
+
+        return ', '.join(group_by_clauses)
 
     @staticmethod
     def _normalize_sort_order(sort_order: Union['SortOrder', str, int]) -> str:
@@ -880,8 +912,7 @@ if __name__ == "__main__":
     # WHERE
     #         ('shot.sequence.project'.name LIKE '%' || ? || '%' OR 'shot'.status = ? OR 'assigned_to'.role = ?)
     # GROUP BY
-    #         assets_task.name, child_tasks.name, shot.sequence.project.assets_project.name
-    #         NOTE: _.id, 'shot.sequence.project'.id
+    #         'shot.sequence.project'.id, _.id
     # ORDER BY
     #         'shot'.name DESC, _.name ASC
     # LIMIT
