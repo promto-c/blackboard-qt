@@ -92,7 +92,7 @@ class LabelEmbedderWidget(QtWidgets.QWidget):
         """
         return self._label.text()
 
-    def set_label_alignment(self, alignment: QtCore.Qt.Alignment):
+    def set_label_alignment(self, alignment: QtCore.Qt.AlignmentFlag):
         """Sets the alignment of the label.
 
         Args:
@@ -131,12 +131,12 @@ class LabelEmbedderWidget(QtWidgets.QWidget):
         self.set_label_text(text)
 
     @property
-    def label_alignment(self) -> QtCore.Qt.Alignment:
-        """QtCore.Qt.Alignment: Gets or sets the alignment of the label."""
+    def label_alignment(self) -> QtCore.Qt.AlignmentFlag:
+        """QtCore.Qt.AlignmentFlag: Gets or sets the alignment of the label."""
         return self._label.alignment()
 
     @label_alignment.setter
-    def label_alignment(self, alignment: QtCore.Qt.Alignment):
+    def label_alignment(self, alignment: QtCore.Qt.AlignmentFlag):
         self.set_label_alignment(alignment)
 
     @property

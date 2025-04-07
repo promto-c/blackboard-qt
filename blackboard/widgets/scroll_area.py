@@ -121,7 +121,7 @@ class EdgeAwareScrollArea(MomentumScrollArea):
 
     # Initialization and Setup
     # ------------------------
-    def __init__(self, parent=None, orientation=QtCore.Qt.Orientation.Horizontal):
+    def __init__(self, parent=None, orientation=QtCore.Qt.Orientation.Horizontal, widgetResizable=True):
         """Initialize the EdgeAwareScrollArea.
 
         Args:
@@ -130,6 +130,8 @@ class EdgeAwareScrollArea(MomentumScrollArea):
                 Defaults to horizontal.
         """
         super().__init__(parent)
+        if widgetResizable:
+            self.setWidgetResizable(widgetResizable)
 
         # Store the arguments
         self.orientation = orientation

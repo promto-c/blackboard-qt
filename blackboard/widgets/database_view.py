@@ -108,8 +108,8 @@ class DataViewWidget(QtWidgets.QWidget):
         # ----------------------
         # Add [W1], [W2] to [L1]
         # Add left filter bar and right search edit to top bar layout
-        self.top_bar_area_layout.addWidget(self.filter_bar_widget, alignment=QtCore.Qt.AlignmentFlag.AlignLeft)
-        self.top_bar_area_layout.addWidget(self.search_widget, alignment=QtCore.Qt.AlignmentFlag.AlignRight)
+        self.top_bar_area_layout.addWidget(self.filter_bar_widget, stretch=3)
+        self.top_bar_area_layout.addWidget(self.search_widget, stretch=1)
 
         # Add [W3], [W4] to [L2]
         # Add left general tool bar and right view tool bar

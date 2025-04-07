@@ -295,17 +295,13 @@ class FilterBarWidget(QtWidgets.QWidget):
             +-------------------------+
         """
         self.tabler_icon = TablerQIcon(opacity=0.6)
-
-        # Create Layouts
-        # --------------
-        self.main_layout = QtWidgets.QHBoxLayout(self)
-        self.main_layout.setContentsMargins(0, 0, 0, 0)
-
-        self.filter_area_layout = QtWidgets.QHBoxLayout()
-        self.main_layout.addLayout(self.filter_area_layout)
+        self.setMaximumHeight(32)
 
         # Create Widgets
         # --------------
+        # Scrollable filter area
+        self.scroll_area = EdgeAwareScrollArea(self, widgetResizable=True)
+
         # Add filter button
         self.add_filter_button = QtWidgets.QToolButton(
             self, icon=self.tabler_icon.plus, toolTip="Add Filter"
@@ -315,9 +311,68 @@ class FilterBarWidget(QtWidgets.QWidget):
         self.add_filter_button.setCursor(QtGui.QCursor(QtCore.Qt.CursorShape.PointingHandCursor))
 
         # Add Widgets to Layouts
-        self.main_layout.addWidget(self.add_filter_button)
+        # ----------------------
+        self.main_layout = QtWidgets.QHBoxLayout(self)
+        self.main_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.filter_area_layout = QtWidgets.QHBoxLayout()
+        self.scroll_area.container_layout.addLayout(self.filter_area_layout)
+        self.scroll_area.container_layout.addWidget(self.add_filter_button)
+
+        # Container for button outside when overflow occurs
+        self.outside_container = QtWidgets.QWidget(visible=False)
+        self.outside_layout = QtWidgets.QHBoxLayout(self.outside_container, spacing=0)
+        self.outside_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.main_layout.addWidget(self.scroll_area)
+        self.main_layout.addWidget(self.outside_container)
 
         self.update_style()
+        self.__adjust_add_button_position()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.__adjust_add_button_position()
+
+    def __animate_scroll_to_widget(self, widget):
+        """Animate scrolling so that the new filter button is smoothly scrolled into view."""
+        scroll_bar = self.scroll_area.horizontalScrollBar()
+        # Calculate the widget's x-position relative to the filter_container
+        widget_pos = widget.mapTo(self.scroll_area.container, QtCore.QPoint(0, 0)).x()
+        widget_width = widget.width()
+        viewport_width = self.scroll_area.viewport().width()
+        # The target value is set so that the right edge of the widget aligns with the viewport's right edge
+        target_value = widget_pos + widget_width - viewport_width
+        if target_value < 0:
+            target_value = 0
+
+        animation = QtCore.QPropertyAnimation(scroll_bar, b"value", self)
+        animation.setDuration(250)  # Duration in milliseconds (adjust as needed)
+        animation.setStartValue(scroll_bar.value())
+        animation.setEndValue(target_value)
+        # Set easing curve to OutCubic for a smooth ease-out effect
+        animation.setEasingCurve(QtCore.QEasingCurve.Type.OutCubic)
+        animation.start(QtCore.QAbstractAnimation.DeletionPolicy.DeleteWhenStopped)
+
+    def __adjust_add_button_position(self):
+        """Check if overflow happens; move button outside when necessary."""
+        content_width = self.scroll_area.container.sizeHint().width()
+        available_width = self.scroll_area.viewport().width()
+
+        if content_width > available_width:
+            # Overflow, move add button outside
+            if self.add_filter_button.parent() != self.outside_container:
+                self.scroll_area.container_layout.removeWidget(self.add_filter_button)
+                self.add_filter_button.setParent(None)
+                self.outside_layout.addWidget(self.add_filter_button)
+                self.outside_container.setVisible(True)
+        else:
+            # No overflow, keep add button inside
+            if self.add_filter_button.parent() != self.scroll_area.container:
+                self.outside_layout.removeWidget(self.add_filter_button)
+                self.add_filter_button.setParent(None)
+                self.scroll_area.container_layout.addWidget(self.add_filter_button)
+                self.outside_container.setVisible(False)
 
     # Public Methods
     # --------------
@@ -334,6 +389,13 @@ class FilterBarWidget(QtWidgets.QWidget):
         self._filter_widgets.append(filter_widget)
         filter_widget.activated.connect(self.filter_changed.emit)
         filter_widget.removed.connect(self.remove_filter_widget)
+
+        # Adjust the button position immediately after adding a filter
+        self.__adjust_add_button_position()
+
+        # Schedule execution after current events to animate scrolling
+        QtCore.QTimer.singleShot(2, lambda: self.__animate_scroll_to_widget(filter_widget.button))
+
 
     def remove_filter_widget(self, filter_widget: 'FilterWidget' = None):
         """Remove a filter widget from the filter area layout.

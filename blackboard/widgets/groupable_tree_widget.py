@@ -446,7 +446,7 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
     # Signals emitted by the GroupableTreeWidget
     ungrouped_all = QtCore.Signal()
     item_added = QtCore.Signal(TreeWidgetItem)
-    drag_started = QtCore.Signal(QtCore.Qt.DropActions)
+    drag_started = QtCore.Signal(QtCore.Qt.DropAction)
     about_to_show_header_menu = QtCore.Signal(str)
     fetch_complete = QtCore.Signal()
     reload_requested = QtCore.Signal()
@@ -1270,7 +1270,7 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         super().showColumn(column_index)
         self.field_visibility_changed.emit(column_index, True)
 
-    def startDrag(self, supported_actions: QtCore.Qt.DropActions):
+    def startDrag(self, supported_actions: QtCore.Qt.DropAction):
         """Handle drag event of the tree widget.
 
         Args:
