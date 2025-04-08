@@ -656,9 +656,9 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
         
         # Determine the left side alias.
         if right_model_field in relationships:
-            a, _ = SQLQueryBuilder._parse_relationship(SQLQueryBuilder._build_inner_alias(chain), sep=sep)
-            _, b = SQLQueryBuilder._parse_relationship(relationships[right_model_field], sep=sep)
-            left_field_alias = f"{a}{sep}{b}"
+            alias_prefix, _ = SQLQueryBuilder._parse_relationship(SQLQueryBuilder._build_inner_alias(chain), sep=sep)
+            _, related_field = SQLQueryBuilder._parse_relationship(relationships[right_model_field], sep=sep)
+            left_field_alias = f"{alias_prefix}{sep}{related_field}"
         else:
             left_field_alias = SQLQueryBuilder._build_inner_alias(chain, sep=sep)
         
@@ -684,34 +684,37 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
 
         Examples:
             >>> SQLQueryBuilder.build_group_by_clause(
-            ...     group_fields={"shot.sequence.project.assets_project.name"},
+            ...     group_fields={"shot.assets_shot.created_by.name", "shot.sequence.project.assets_project.name", "shot.sequence.project.assets_project.created_by.name"},
             ...     base_model="Tasks",
             ...     relationships={
             ...         "Tasks.shot": "Shots.id",
             ...         "Shots.sequence": "Sequences.id",
             ...         "Sequences.project": "Projects.id",
             ...         "Assets.project": "Projects.id",
+            ...         "Assets.shot": "Shots.id",
+            ...         "Shots.assets_shot": "Assets.shot",
             ...         "Projects.assets_project": "Assets.project",
+            ...         "Assets.created_by": "Users.id",
             ...     }
             ... )
-            "'shot.sequence.project'.id"
+            "'shot'.id, 'shot.sequence.project'.id"
         """
         group_by_clauses = set()
         for field in group_fields:
-            parent_chain, _ = SQLQueryBuilder._parse_relationship(field, sep=sep)
+            parent_chain = SQLQueryBuilder.get_to_many_chain(base_model=base_model, field=field, relationships=relationships, sep=sep)
 
             # Resolve the left model field from the base model and relation chain.
             left_model_field = SQLQueryBuilder.resolve_model_field(base_model, parent_chain, relationships)
             # Get the corresponding right model field (e.g. "Shots.id") from relationships.
             right_model_field = relationships[left_model_field]
 
-            a, _ = SQLQueryBuilder._parse_relationship(SQLQueryBuilder._build_inner_alias(parent_chain), sep=sep)
-            _, b = SQLQueryBuilder._parse_relationship(relationships[right_model_field], sep=sep)
-            left_field_alias = f"{a}{sep}{b}"
+            alias_prefix, _ = SQLQueryBuilder._parse_relationship(SQLQueryBuilder._build_inner_alias(parent_chain), sep=sep)
+            _, related_field = SQLQueryBuilder._parse_relationship(relationships[right_model_field], sep=sep)
+            left_field_alias = f"{alias_prefix}{sep}{related_field}"
 
             group_by_clauses.add(left_field_alias)
 
-        return ', '.join(group_by_clauses)
+        return ', '.join(sorted(group_by_clauses))
 
     @staticmethod
     def _normalize_sort_order(sort_order: Union['SortOrder', str, int]) -> str:
@@ -785,18 +788,70 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
         return relationship.rsplit(sep, 1)
 
     @staticmethod
-    def _is_one_to_many_field(base_model: str, field: str, relationships, sep: str = CHAIN_SEPARATOR) -> bool:
+    def _is_one_to_many_field(base_model: str, field: str, relationships: Dict[str, str], sep: str = CHAIN_SEPARATOR) -> bool:
+        """Checks if a hierarchical field implies a one-to-many relationship.
+
+        Starting from base_model, it inspects each segment of the field (e.g. "child_tasks.grandchild_field")
+        by leveraging get_to_many_chain. If any segment qualifies as one-to-many, the field is treated as such.
+
+        Args:
+            base_model (str): The starting model.
+            field (str): The hierarchical field (e.g. "child_tasks.grandchild_field").
+            relationships (Dict[str, str]): A mapping of relationship keys (e.g. "Model.field") to join targets (e.g. "OtherModel.id").
+            sep (str): The separator for the field (default is CHAIN_SEPARATOR).
+
+        Returns:
+            bool: True if the field represents a one-to-many relationship; otherwise False.
+        """
+        return bool(SQLQueryBuilder.get_to_many_chain(base_model, field, relationships, sep=sep))
+
+    @staticmethod
+    def get_to_many_chain(base_model: str, field: str, relationships: Dict[str, str], sep: str = CHAIN_SEPARATOR) -> bool:
+        """Scans the relationship chain for the given field and returns the first chain segment that 
+        qualifies as a one-to-many join.
+
+        Args:
+            base_model (str): The starting model name.
+            field (str): The hierarchical field name to analyze (e.g., "child_tasks.grandchild_field").
+            relationships (dict): A dictionary of relationship mappings (e.g., {"Tasks.child_tasks": "Child.parent_id"}).
+            sep (str): The delimiter used to separate segments in the field name.
+
+        Returns:
+            str: The first join chain segment that corresponds to a one-to-many relationship if detected;
+                 otherwise, returns None.
+
+        Examples:
+            >>> relationships = {
+            ...     "Tasks.shot": "Shots.id",
+            ...     "Shots.sequence": "Sequences.id",
+            ...     "Sequences.project": "Projects.id",
+            ...     "Assets.project": "Projects.id",
+            ...     "Projects.assets_project": "Assets.project",
+            ...     "Assets.created_by": "Users.id",
+            ... }
+            >>> SQLQueryBuilder.get_to_many_chain("Tasks", "shot.sequence.project.assets_project.created_by.name", relationships)
+            'shot.sequence.project.assets_project'
+            >>> SQLQueryBuilder.get_to_many_chain("Tasks", "shot.sequence.project.name", relationships) is None
+            True
+        """
+        # If there is no separator, there is no relationship chain to inspect.
         if sep not in field:
-            return False
-        parent_field, _ = SQLQueryBuilder._parse_relationship(field)
-        relation_chain = SQLQueryBuilder.resolve_model_field(
-            base_model=base_model, field_chain=parent_field, relationships=relationships, sep=sep
-        )
+            return
 
-        if relation_chain not in relationships:
-            return False
+        # Assume propagate_hierarchies is implemented.
+        # It should return a list of join chains with the leaf pruned.
+        relation_chains = SQLQueryBuilder.propagate_hierarchies([field], sep=sep, prune_leaves=1)
 
-        return relationships[relation_chain] in relationships
+        # Iterate over the generated join chains.
+        for chain in relation_chains:
+            resolved_field = SQLQueryBuilder.resolve_model_field(
+                base_model=base_model, field_chain=chain, relationships=relationships, sep=sep
+            )
+
+            # If the resolved chain exists in relationships and its join target is also joinable,
+            # consider this level to be a one-to-many relationship.
+            if resolved_field in relationships and relationships[resolved_field] in relationships:
+                return chain
 
     @staticmethod
     def _join_where_clauses(where_clauses: List[str], group_operator: Union[GroupOperator, str]) -> str:
