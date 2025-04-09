@@ -8,8 +8,8 @@ from qtpy import QtWidgets, QtCore, QtGui
 
 # Local Imports
 # -------------
-from blackboard.utils import FlatProxyModel
-from blackboard.widgets import MomentumScrollListView
+from blackboard.utils.proxy_model import FlatProxyModel
+from blackboard.widgets.momentum_scroll_widget import MomentumScrollListView
 
 
 # Class Definitions
@@ -21,8 +21,21 @@ class TagListView(MomentumScrollListView):
 
     # Initialization and Setup
     # ------------------------
-    def __init__(self, parent=None, show_only_checked: bool = True, read_only: bool = False):
-        super().__init__(parent)
+    def __init__(self, parent=None, show_only_checked: bool = True, read_only: bool = False,
+                 editTriggers=QtWidgets.QListView.EditTrigger.NoEditTriggers,
+                 viewMode=QtWidgets.QListView.ViewMode.IconMode,
+                 resizeMode=QtWidgets.QListView.ResizeMode.Adjust,
+                 dragDropMode=QtWidgets.QListView.DragDropMode.NoDragDrop,
+                 mouseTracking=True,
+                 *args, **kwargs
+                 ):
+        """Initialize the TagListView widget.
+        """
+        super().__init__(
+            parent, editTriggers=editTriggers, viewMode=viewMode, resizeMode=resizeMode,
+            dragDropMode=dragDropMode, mouseTracking=mouseTracking,
+            *args, **kwargs
+        )
 
         # Store the arguments
         self.show_only_checked = show_only_checked
@@ -30,7 +43,6 @@ class TagListView(MomentumScrollListView):
 
         # Initialize setup
         self.__init_attributes()
-        self.__init_ui()
 
     def __init_attributes(self):
         """Initialize the attributes.
@@ -41,22 +53,6 @@ class TagListView(MomentumScrollListView):
         self._press_position = None
         super().setModel(self._proxy_model)
         self._proxy_model.layoutChanged.connect(self.tag_changed.emit)
-
-    def __init_ui(self):
-        """Initialize the UI of the widget.
-        """
-        self.setEditTriggers(QtWidgets.QListView.EditTrigger.NoEditTriggers)
-        self.setViewMode(QtWidgets.QListView.ViewMode.IconMode)
-        self.setResizeMode(QtWidgets.QListView.ResizeMode.Adjust)
-
-        self.setDragDropMode(QtWidgets.QListView.DragDropMode.NoDragDrop)
-        self.setMouseTracking(True)
-
-        self.setStyleSheet('''
-            QListView::item {
-                padding: 2px 5px;
-            }
-        ''')
 
     # Public Methods
     # --------------
@@ -86,16 +82,18 @@ class TagListView(MomentumScrollListView):
         """
         model = self.source_model or QtGui.QStandardItemModel()
 
-        for tag in tags:
+        # Append new items to the model
+        model.setRowCount(model.rowCount() + len(tags))
+        for index, tag in enumerate(tags):
             display_text = str(tag) if not isinstance(tag, str) else tag
             item = QtGui.QStandardItem(display_text)
             item.setCheckable(True)
             item.setCheckState(QtCore.Qt.CheckState.Checked)
 
             # Store the original tag in a custom role
-            item.setData(tag, QtCore.Qt.UserRole)
+            item.setData(tag, QtCore.Qt.ItemDataRole.UserRole)
 
-            model.appendRow(item)
+            model.setItem(model.rowCount() - len(tags) + index, item)
 
         self.setModel(model)
 
@@ -172,18 +170,18 @@ class TagListView(MomentumScrollListView):
 # Example usage
 if __name__ == "__main__":
     import sys
+    from blackboard import theme
+
     app = QtWidgets.QApplication(sys.argv)
-    main_window = QtWidgets.QMainWindow()
+    theme.set_theme(app, 'dark')
+
     tag_list_view = TagListView(read_only=True)
 
-    model = QtGui.QStandardItemModel()
     # Add initial tags
     tag_list_view.add_items(["Tag 1", "Tag 3", "Tag 2"])
+    tag_list_view.show()
 
-    main_window.setCentralWidget(tag_list_view)
-    main_window.show()
-
-    # Testt sorting
+    # Test sorting
     tag_list_view.add_items(["Tag 7", "Tag 5", "Tag 6"])
 
     sys.exit(app.exec_())

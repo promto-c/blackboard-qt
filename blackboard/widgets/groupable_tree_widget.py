@@ -16,16 +16,18 @@ from tablerqicon import TablerQIcon
 
 # Local Imports
 # -------------
-import blackboard as bb
-from blackboard import widgets
 # NOTE: test
 from blackboard.widgets.header_view import SearchableHeaderView
+from blackboard.utils.key_binder import KeyBinder
 from blackboard.utils.tree_utils import TreeUtil, TreeItemUtil
 from blackboard.utils.data_fetch_manager import FetchManager
 from blackboard.utils.application_utils import QApplicationUtils
 from blackboard.widgets.menu import ContextMenu
 from blackboard.widgets.momentum_scroll_widget import MomentumScrollTreeWidget
 from blackboard.widgets.button import TearOffWidgetAction
+from blackboard.widgets.tag_widget import TagListView
+from blackboard.widgets.scalable_view import ScalableView
+from blackboard.widgets.item_delegate import AdaptiveColorMappingDelegate, HighlightItemDelegate, ThumbnailDelegate
 
 
 # Class Definitions
@@ -51,23 +53,13 @@ class TreeWidgetItem(QtWidgets.QTreeWidgetItem):
             item_data (Union[Dict[str, Any], List[str]], optional): Data for the item, as a list of values or a dictionary with keys matching the headers of the parent widget. Defaults to `None`.
             item_id (Any, optional): The ID of the item. Defaults to `None`.
         """
+        super().__init__(parent)
+
         # Store the item's ID
         self.id = item_id
 
-        # Determine the format of the data (list or dict) and prepare it for the item
-        if isinstance(item_data, list):
-            item_values = item_data
-        elif isinstance(item_data, dict):
-            # Retrieve column names from the parent widget
-            fields = TreeUtil.get_field_names(parent)
-            # Match data to columns
-            item_values = [item_data.get(field, '') for field in fields]
-
-        # Call superclass constructor to initialize the item with formatted data
-        super().__init__(parent, map(self._convert_to_str, item_values))
-
-        # Set the UserRole data for the item.
-        self._set_user_role_data(item_values)
+        # Set the data for the item.
+        self._set_values(item_data)
 
     def _convert_to_str(self, value: Any) -> str:
         """Convert a given value to a string, decoding bytes if necessary, with size limitation.
@@ -84,15 +76,13 @@ class TreeWidgetItem(QtWidgets.QTreeWidgetItem):
                 truncated = value[:self.MAX_BYTES_DISPLAY]
                 return truncated.hex() + '... (truncated)'
             return value.hex()
-        elif isinstance(value, list):
-            return ''
 
         return str(value)
 
     # Public Methods
     # --------------
     def get_value(self, column: Union[int, str], data_role: QtCore.Qt.ItemDataRole = QtCore.Qt.ItemDataRole.UserRole) -> Any:
-        """Retrieves the value for the specified column and role.
+        """Retrieve the value for the specified column and role.
 
         Args:
             column (Union[int, str]): Column index or name.
@@ -124,7 +114,6 @@ class TreeWidgetItem(QtWidgets.QTreeWidgetItem):
         if data_role is None:
             # Set both UserRole and DisplayRole data
             self.setData(column_index, QtCore.Qt.ItemDataRole.UserRole, value)
-            self.setData(column_index, QtCore.Qt.ItemDataRole.DisplayRole, self._convert_to_str(value))
 
             # Special handling for lists and booleans
             if isinstance(value, list):
@@ -132,27 +121,33 @@ class TreeWidgetItem(QtWidgets.QTreeWidgetItem):
             elif isinstance(value, bool):
                 check_state = QtCore.Qt.CheckState.Checked if value else QtCore.Qt.CheckState.Unchecked
                 self.setData(column_index, QtCore.Qt.ItemDataRole.CheckStateRole, check_state)
+            else:
+                self.setData(column_index, QtCore.Qt.ItemDataRole.DisplayRole, self._convert_to_str(value))
+
         else:
             # Set data for the specified role
             self.setData(column_index, data_role, value)
 
     # Private Methods
     # ---------------
-    def _set_user_role_data(self, item_values: List[Any]):
+    def _set_values(self, item_data: Union[Dict[str, Any], List[Any]]):
         """Set the UserRole data for the item.
 
         Args:
-            item_values (List[Any]): The list of values to set as the item's data.
+            item_data (Dict[str, Any] | List[Any]): The list of values to set as the item's data.
         """
+        # Determine the format of the data (list or dict) and prepare it for the item
+        if isinstance(item_data, list):
+            item_values = item_data
+        elif isinstance(item_data, dict):
+            # Retrieve column names from the parent widget
+            fields = TreeUtil.get_field_names(self.treeWidget())
+            # Match data to columns
+            item_values = [item_data.get(field, '') for field in fields]
+
         # Iterate through each column and set its value in the UserRole data
         for column_index, value in enumerate(item_values):
-            if isinstance(value, list):
-                # If the value is a list, set it as a TagListView widget
-                self._set_tag_list_view(column_index, value)
-            elif isinstance(value, bool):
-                check_state = QtCore.Qt.CheckState.Checked if value else QtCore.Qt.CheckState.Unchecked
-                self.setData(column_index, QtCore.Qt.ItemDataRole.CheckStateRole, check_state)
-            self.set_value(column_index, value, QtCore.Qt.ItemDataRole.UserRole)
+            self.set_value(column_index, value)
 
     def _set_tag_list_view(self, column_index: int, values: List[str]):
         """Set up a TagListView with the given list of tags and assign it to the specified column.
@@ -162,8 +157,7 @@ class TreeWidgetItem(QtWidgets.QTreeWidgetItem):
             values (List[str]): The list of tags to populate the TagListView.
         """
         # Create the TagListView widget
-        tag_list_view = widgets.TagListView(self.treeWidget(), read_only=True)
-        tag_list_view.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
+        tag_list_view = TagListView(self.treeWidget(), read_only=True, focusPolicy=QtCore.Qt.FocusPolicy.NoFocus)
         tag_list_view.add_items(values)
 
         # NOTE: Workaround
@@ -486,8 +480,8 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
 
         # Managers and delegates for data and UI handling.
         self.fetch_manager = FetchManager(self)
-        self.highlight_item_delegate = widgets.HighlightItemDelegate()
-        self.thumbnail_delegate = widgets.ThumbnailDelegate(self)
+        self.highlight_item_delegate = HighlightItemDelegate()
+        self.thumbnail_delegate = ThumbnailDelegate(self)
 
         # Private Attributes
         # ------------------
@@ -542,7 +536,7 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         # Key Binds
         # ---------
         # Create a shortcut for the copy action and connect its activated signal
-        bb.utils.KeyBinder.bind_key(QtGui.QKeySequence.StandardKey.Copy, self, self.copy_selected_cells)
+        KeyBinder.bind_key(QtGui.QKeySequence.StandardKey.Copy, self, self.copy_selected_cells)
 
     # Public Methods
     # --------------
@@ -661,7 +655,7 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         min_value, max_value = self.get_column_value_range(column, child_level)
 
         # Create and set the adaptive color mapping delegate for the column
-        delegate = widgets.AdaptiveColorMappingDelegate(self, min_value, max_value)
+        delegate = AdaptiveColorMappingDelegate(self, min_value, max_value)
         self.setItemDelegateForColumn(column, delegate)
 
     def remove_color_adaptive(self, field: str):
@@ -1292,14 +1286,14 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         """
         super().scrollContentsBy(dx, dy)
 
-        if widgets.ScalableView.is_scalable(self):
+        if ScalableView.is_scalable(self):
             self.model().layoutChanged.emit()
 
     def setItemWidget(self, item: QtWidgets.QTreeWidgetItem, column: int, widget: QtWidgets.QWidget):
         """Add a widget to an item and tracking the new one for position updates.
         """
         # NOTE: Workaround to manually forward mouse events from the TagListView to the QTreeWidget's viewport
-        if isinstance(widget, widgets.TagListView):
+        if isinstance(widget, TagListView):
             widget.viewport().installEventFilter(self)
 
         super().setItemWidget(item, column, widget)
@@ -1318,7 +1312,7 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         Returns:
             bool: True if the event is handled and forwarded; otherwise, False.
         """
-        if isinstance(source.parentWidget(), widgets.TagListView) and isinstance(event, QtGui.QMouseEvent):
+        if isinstance(source.parentWidget(), TagListView) and isinstance(event, QtGui.QMouseEvent):
             # Forward mouse events to the viewport of the QTreeWidget
             return QApplicationUtils.forward_mouse_event(event, self.viewport())
         return super().eventFilter(source, event)
@@ -1330,6 +1324,7 @@ def main():
     """Create the application and main window, and show the widget.
     """
     import sys
+    from blackboard import theme
     from blackboard.examples.example_data_dict import COLUMN_NAME_LIST, ID_TO_DATA_DICT
     from blackboard.examples.example_generator import generate_file_paths
 
@@ -1339,7 +1334,7 @@ def main():
     app.setWindowIcon(QtGui.QIcon('image_not_available_placeholder.png'))
 
     # Set theme of QApplication to the dark theme
-    bb.theme.set_theme(app, 'dark')
+    theme.set_theme(app, 'dark')
 
     # Create an instance of the widget
     generator = generate_file_paths('blackboard', delay_duration_sec=0.05)

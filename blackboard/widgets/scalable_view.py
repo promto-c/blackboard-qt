@@ -29,11 +29,23 @@ class ScalableView(QtWidgets.QGraphicsView):
 
     # Initialization and Setup
     # ------------------------
-    def __init__(self, widget: QtWidgets.QWidget, parent: Optional[QtWidgets.QWidget] = None):
+    def __init__(self, widget: QtWidgets.QWidget, parent: Optional[QtWidgets.QWidget] = None,
+                 alignment=QtCore.Qt.AlignmentFlag.AlignTop | QtCore.Qt.AlignmentFlag.AlignLeft,
+                 viewportUpdateMode=QtWidgets.QGraphicsView.ViewportUpdateMode.FullViewportUpdate,
+                 renderHints=QtGui.QPainter.RenderHint.SmoothPixmapTransform,
+                 horizontalScrollBarPolicy=QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff,
+                 verticalScrollBarPolicy=QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff,
+                 *args, **kwargs):
         """Initialize the ScalableView widget.
         """
         # Initialize the super class
-        super().__init__(parent)
+        super().__init__(
+            parent,
+            alignment=alignment, viewportUpdateMode=viewportUpdateMode, renderHints=renderHints,
+            horizontalScrollBarPolicy=horizontalScrollBarPolicy,
+            verticalScrollBarPolicy=verticalScrollBarPolicy,
+            *args, **kwargs
+        )
 
         # Store the arguments
         self.widget = widget
@@ -51,9 +63,9 @@ class ScalableView(QtWidgets.QGraphicsView):
         self.max_zoom_level = self.DEFAULT_MAX_ZOOM_LEVEL
 
         # Set the current zoom level to 1.0 (no zoom)
-        self.current_zoom_level = self.DEFAULT_ZOOM_LEVEL
+        self.zoom_level = self.DEFAULT_ZOOM_LEVEL
 
-        # Get the reference to the QApplication instance
+        # Register this widget in the application's global list of scalable widgets.
         if hasattr(QtWidgets.qApp, 'scalable_widgets'):
             QtWidgets.qApp.scalable_widgets.append(self.widget)
         else:
@@ -64,19 +76,7 @@ class ScalableView(QtWidgets.QGraphicsView):
         """
         # Set the scene
         self.setScene(QtWidgets.QGraphicsScene(self))
-        # Set the widget as the central widget of the scene
         self.graphic_proxy_widget = self.scene().addWidget(self.widget)
-
-        # Set the alignment of the widget to the top left corner
-        self.setAlignment(QtCore.Qt.AlignmentFlag.AlignTop | QtCore.Qt.AlignmentFlag.AlignLeft)
-        # Set the viewport update mode to full viewport update to ensure that the entire view is updated when scaling
-        self.setViewportUpdateMode(QtWidgets.QGraphicsView.ViewportUpdateMode.FullViewportUpdate)
-        # Set the rendering hints to smooth pixels to improve the quality of the rendering
-        self.setRenderHints(QtGui.QPainter.RenderHint.SmoothPixmapTransform)
-
-        # Set the scroll bars to be always off
-        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
         # Set the initial minimum size to fit the widget's contents
         self.setMinimumSize(self.widget.sizeHint())
@@ -91,7 +91,7 @@ class ScalableView(QtWidgets.QGraphicsView):
         # Key Binds
         # ---------
         # Create a QShortcut for the F key to reset the scaling of the view.
-        KeyBinder.bind_key('F', self, self.reset_scale, QtCore.Qt.ShortcutContext.WindowShortcut)
+        KeyBinder.bind_key('F', self, self.set_scale, QtCore.Qt.ShortcutContext.WindowShortcut)
 
     # Utility Methods
     # ---------------
@@ -112,38 +112,22 @@ class ScalableView(QtWidgets.QGraphicsView):
 
     # Extended Methods
     # ----------------
-    def set_scale(self, zoom_level: float = 1.0) -> None:
+    def set_scale(self, zoom_level: float = 1.0):
         """Set scale of the view to specified zoom level.
         """
         # Clamp the zoom level between the min and max zoom levels
-        zoom_level = max(self.min_zoom_level, min(zoom_level, self.max_zoom_level))
+        self.zoom_level = max(self.min_zoom_level, min(zoom_level, self.max_zoom_level))
 
-        # Set the new zoom level
-        self.setTransform(QtGui.QTransform().scale(zoom_level, zoom_level))
-        # Update current zoom level
-        self.current_zoom_level = zoom_level
-        # Update the minimum size to fit the current zoom level
-        self.setMinimumSize(self.widget.sizeHint() * self.current_zoom_level)
-
-        # Update the size of the widget to fit the view window
-        self.resizeEvent()
-
-    def reset_scale(self) -> None:
-        """Reset scaling of the view to default zoom level (1.0 or no zoom).
-        """
-        # Reset the scaling of the view
-        self.resetTransform()
-        # Reset the current zoom level to 1.0 (no zoom)
-        self.current_zoom_level = 1.0
-        # Update the minimum size to fit the current zoom level
-        self.setMinimumSize(self.widget.sizeHint() * self.current_zoom_level)
+        # Set the scaling of the view
+        self.setTransform(QtGui.QTransform().scale(self.zoom_level, self.zoom_level))
+        self.setMinimumSize(self.widget.sizeHint() * self.zoom_level)
 
         # Update the size of the widget to fit the view window
         self.resizeEvent()
 
     def save_state(self, settings: QtCore.QSettings, group_name: str = 'scalable_view'):
         settings.beginGroup(group_name)
-        settings.setValue('zoom_level', self.current_zoom_level)
+        settings.setValue('zoom_level', self.zoom_level)
         settings.endGroup()
 
     def load_state(self, settings: QtCore.QSettings, group_name='scalable_view'):
@@ -153,8 +137,8 @@ class ScalableView(QtWidgets.QGraphicsView):
 
         self.set_scale(zoom_level)
 
-    # Event Handling or Override Methods
-    # ----------------------------------
+    # Override Methods
+    # ----------------
     def eventFilter(self, obj: QtCore.QObject, event: QtCore.QEvent) -> bool:
         if event.type() == QtCore.QEvent.Type.ContextMenu and obj is not None:
             # TODO: Modify the context menu to allow it to popup and overlap the ScalableView instead of being constrained within it.
@@ -169,7 +153,7 @@ class ScalableView(QtWidgets.QGraphicsView):
         # Default case: Pass the event on to the parent class
         return super().eventFilter(obj, event)
 
-    def resizeEvent(self, event: Optional[QtGui.QResizeEvent] = None) -> None:
+    def resizeEvent(self, event: Optional[QtGui.QResizeEvent] = None):
         """Handle resize events to resize the widget to the full size of the view, reserved for scaling.
         """
         # Get the size of the view
@@ -178,43 +162,38 @@ class ScalableView(QtWidgets.QGraphicsView):
         # Create a QRectF object with the size of the view reserved for scaling
         rect = QtCore.QRectF(
             0, 0,
-            view_size.width() / self.current_zoom_level - 2,
-            view_size.height() / self.current_zoom_level - 2
+            view_size.width() / self.zoom_level - 2,
+            view_size.height() / self.zoom_level - 2
         )
 
-        # Set the size of the widget to the size of the view
+        # Set the geometry of the graphic proxy widget to the new size
         self.graphic_proxy_widget.setGeometry(rect)
         self.scene().setSceneRect(rect)
 
-    def wheelEvent(self, event: QtGui.QWheelEvent) -> None:
+    def wheelEvent(self, event: QtGui.QWheelEvent):
         """Handle wheel events to allow the user to scale the contents of the view.
         """
-        # Check if the Ctrl key is pressed
+        # Handle view scaling if the Ctrl key is pressed
         if event.modifiers() == QtCore.Qt.KeyboardModifier.ControlModifier:
-            # Get the scroll delta
-            scroll_delta = event.angleDelta().y()
             # Calculate the scaling factor based on the wheel delta
+            scroll_delta = event.angleDelta().y()
             scale_factor = 1 + (scroll_delta / 120) / 10
-            # Get the current scaling of the view
-            self.current_zoom_level = self.transform().m11()
 
-            # Calculate the new zoom level
-            new_zoom_level = self.current_zoom_level * scale_factor
-            # Set scale of the view to new zoom level.
-            self.set_scale(new_zoom_level)
+            # Set the new zoom level
+            self.set_scale(self.zoom_level * scale_factor)
 
         # If the Ctrl key is not pressed, pass the event on to the parent class
         else:
             super().wheelEvent(event)
 
     # NOTE: To handle when has multiple Scalable Views in same window
-    # def dragEnterEvent(self, event: QtGui.QDragEnterEvent) -> None:
+    # def dragEnterEvent(self, event: QtGui.QDragEnterEvent):
     #     event.accept()
 
-    # def dragMoveEvent(self, event: QtGui.QDragMoveEvent) -> None:
+    # def dragMoveEvent(self, event: QtGui.QDragMoveEvent):
     #     event.accept()
 
-    # def dropEvent(self, event: QtGui.QDropEvent) -> None:
+    # def dropEvent(self, event: QtGui.QDropEvent):
     #     # Map the event position to the scalable view's coordinate system
     #     scene_pos = self.mapToScene(event.pos()).toPoint()
 
@@ -241,8 +220,8 @@ if __name__ == '__main__':
 
     # Create the GroupableTreeWidget with example data
     tree_widget = widgets.GroupableTreeWidget()
-    tree_widget.setHeaderLabels(COLUMN_NAME_LIST)
-    tree_widget.add_items(ID_TO_DATA_DICT)
+    # tree_widget.setHeaderLabels(COLUMN_NAME_LIST)
+    # tree_widget.add_items(ID_TO_DATA_DICT)
 
     # Check if the tree widget is within a ScalableView before wrapping it
     print(ScalableView.is_scalable(tree_widget))

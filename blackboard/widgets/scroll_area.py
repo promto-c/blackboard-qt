@@ -212,7 +212,7 @@ class EdgeAwareScrollArea(MomentumScrollArea):
         """Initialize signal-slot connections.
         """
         self.scroll_timer.timeout.connect(self._auto_scroll)
-        if self.orientation == QtCore.Qt.Horizontal:
+        if self.orientation == QtCore.Qt.Orientation.Horizontal:
             self.horizontalScrollBar().valueChanged.connect(self.overlay.update)
         else:
             self.verticalScrollBar().valueChanged.connect(self.overlay.update)
@@ -222,7 +222,7 @@ class EdgeAwareScrollArea(MomentumScrollArea):
     def _auto_scroll(self):
         """Perform auto-scroll by a fixed number of pixels based on the current direction.
         """
-        if self.orientation == QtCore.Qt.Horizontal:
+        if self.orientation == QtCore.Qt.Orientation.Horizontal:
             h_scroll = self.horizontalScrollBar()
             new_value = h_scroll.value() + self.scroll_direction * 5  # 5px per tick.
             new_value = max(0, min(new_value, h_scroll.maximum()))
