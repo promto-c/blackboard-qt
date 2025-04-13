@@ -1,6 +1,6 @@
 # Type Checking Imports
 # ---------------------
-from typing import TYPE_CHECKING, Any, Dict, Iterable, Optional, Union, Set
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union, Set
 if TYPE_CHECKING:
     from blackboard.utils.database import AbstractModel, DatabaseManager, ManyToManyField, FieldInfo
     from blackboard.widgets.groupable_tree_widget import TreeWidgetItem
@@ -24,6 +24,7 @@ from tablerqicon import TablerQIcon
 import blackboard as bb
 from blackboard import widgets
 from blackboard.widgets.momentum_scroll_widget import MomentumScrollArea
+from submodules.blackboard.blackboard.widgets.breadcrumb_widget import BreadcrumbWidget
 from blackboard.widgets.filter_widget import FilterWidget, MultiSelectFilterWidget
 from blackboard.utils.database.sql_query_builder import SQLQueryBuilder
 
@@ -69,26 +70,10 @@ class DataViewWidget(QtWidgets.QWidget):
             |                                                   |  |
             +---------------------------------------------------+ -+
         """
-        # Create Layouts
-        # --------------
-        # [L0]: Set main layout as vertical layout
-        self.main_layout = QtWidgets.QVBoxLayout(self)
-        self.main_layout.setContentsMargins(0, 0, 0, 0)
-
-        # [L1]: Add top bar layout as horizontal layout
-        self.top_bar_area_layout = QtWidgets.QHBoxLayout()
-        self.main_layout.addLayout(self.top_bar_area_layout)
-
-        # [L2]: Add utility layout
-        self.utility_area_layout = QtWidgets.QHBoxLayout()
-        self.main_layout.addLayout(self.utility_area_layout)
-
-        # [L3]: Add main tree layout
-        self.main_view_layout = QtWidgets.QVBoxLayout()
-        self.main_layout.addLayout(self.main_view_layout)
-
         # Create Widgets
         # --------------
+        self.breadcrumb_widget = BreadcrumbWidget(self)
+
         # [W1]: Create top left filter bar
         self.filter_bar_widget = widgets.FilterBarWidget(self)
         self.add_filter_button = self.filter_bar_widget.add_filter_button
@@ -106,19 +91,31 @@ class DataViewWidget(QtWidgets.QWidget):
 
         # Add Widgets to Layouts
         # ----------------------
-        # Add [W1], [W2] to [L1]
-        # Add left filter bar and right search edit to top bar layout
+        # [L0]: Set main layout as vertical layout
+        self.main_layout = QtWidgets.QVBoxLayout(self)
+        self.main_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.main_layout.addWidget(self.breadcrumb_widget, alignment=QtCore.Qt.AlignmentFlag.AlignTop)
+
+        # [L1]: Add top bar layout as horizontal layout
+        # [W1], [W2]: Add left filter bar and right search edit to top bar layout
+        self.top_bar_area_layout = QtWidgets.QHBoxLayout()
         self.top_bar_area_layout.addWidget(self.filter_bar_widget, stretch=3)
         self.top_bar_area_layout.addWidget(self.search_widget, stretch=1)
+        self.main_layout.addLayout(self.top_bar_area_layout)
 
-        # Add [W3], [W4] to [L2]
-        # Add left general tool bar and right view tool bar
+        # [L2]: Add utility layout
+        # [W3], [W4]: Add left general tool bar and right view tool bar
+        self.utility_area_layout = QtWidgets.QHBoxLayout()
         self.utility_area_layout.addWidget(self.general_tool_bar, alignment=QtCore.Qt.AlignmentFlag.AlignLeft)
         self.utility_area_layout.addWidget(self.view_tool_bar, alignment=QtCore.Qt.AlignmentFlag.AlignRight)
+        self.main_layout.addLayout(self.utility_area_layout)
 
-        # Add [W5] to [L3]
-        # Add tree widget to main tree widget
+        # [L3]: Add main tree layout
+        # [W5]: Add tree widget to main tree widget
+        self.main_view_layout = QtWidgets.QVBoxLayout()
         self.main_view_layout.addWidget(self.tree_widget)
+        self.main_layout.addLayout(self.main_view_layout)
 
     def __init_signal_connections(self):
         """Initialize signal-slot connections.
@@ -131,6 +128,14 @@ class DataViewWidget(QtWidgets.QWidget):
 
     # Public Methods
     # --------------
+    def set_breadcrumb(self, paths: List[str]):
+        """Set the breadcrumb text.
+
+        Args:
+            paths: The breadcrumb text to set.
+        """
+        self.breadcrumb_widget.set_paths(paths)
+
     def add_filter_widget(self, filter_widget: 'FilterWidget'):
         self.filter_bar_widget.add_filter_widget(filter_widget)
 
@@ -765,6 +770,7 @@ class DatabaseViewWidget(DataViewWidget):
             return
 
         self._base_model = self.db_manager.get_model(model_name)
+        self.set_breadcrumb([self._database.database, model_name])
         self._load_model_data()
 
     def _load_model_data(self):

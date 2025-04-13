@@ -91,10 +91,10 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def add_dock(self, widget: QtWidgets.QWidget) -> QtWidgets.QDockWidget:
         """Add a dock widget with the given widget and title.
-        
+
         Args:
             widget (QtWidgets.QWidget): The widget to be added to the dock.
-        
+
         Returns:
             QtWidgets.QDockWidget: The created dock widget.
         """
