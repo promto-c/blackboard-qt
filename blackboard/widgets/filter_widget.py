@@ -346,12 +346,11 @@ class FilterBarWidget(QtWidgets.QWidget):
         if target_value < 0:
             target_value = 0
 
-        animation = QtCore.QPropertyAnimation(scroll_bar, b"value", self)
-        animation.setDuration(250)  # Duration in milliseconds (adjust as needed)
-        animation.setStartValue(scroll_bar.value())
-        animation.setEndValue(target_value)
-        # Set easing curve to OutCubic for a smooth ease-out effect
-        animation.setEasingCurve(QtCore.QEasingCurve.Type.OutCubic)
+        animation = QtCore.QPropertyAnimation(
+            scroll_bar, b"value", self,
+            duration=250, startValue=scroll_bar.value(), endValue=target_value,
+            easingCurve=QtCore.QEasingCurve.Type.OutCubic,
+        )
         animation.start(QtCore.QAbstractAnimation.DeletionPolicy.DeleteWhenStopped)
 
     def __adjust_add_button_position(self):
@@ -395,7 +394,6 @@ class FilterBarWidget(QtWidgets.QWidget):
 
         # Schedule execution after current events to animate scrolling
         QtCore.QTimer.singleShot(2, lambda: self.__animate_scroll_to_widget(filter_widget.button))
-
 
     def remove_filter_widget(self, filter_widget: 'FilterWidget' = None):
         """Remove a filter widget from the filter area layout.
