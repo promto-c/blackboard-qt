@@ -18,20 +18,18 @@ class TextUtil:
 
     @staticmethod
     def fuzzy_match(query: str, text: str) -> List[int]:
-        """Check if all characters in the query appear in order in text.
-        Returns a list of indices in text where each query character is found.
-        If the query is not a subsequence of text, returns an empty list.
+        """Check if all characters in the query appear in order in text and return the match
+        indices for the optimal (tightest) match. If the query is not a subsequence, returns [].
 
-        Parameters:
-            query (str): The search query (case-insensitive).
-            text (str): The text to search within.
-
-        Returns:
-            List[int]: A list of indices for each character matched or an empty list if no match.
+        The optimal match is defined as the one where the span between the first and last
+        matched characters (i.e. last index - first index + 1) is minimized. If there is a tie,
+        the match with the later starting index is preferred.
 
         Examples:
             >>> TextUtil.fuzzy_match("", "Apple")
             []
+            >>> TextUtil.fuzzy_match("p", "Apple")
+            [1]
             >>> TextUtil.fuzzy_match("ap", "Apple")
             [0, 1]
             >>> TextUtil.fuzzy_match("ae", "Apple")
@@ -47,76 +45,85 @@ class TextUtil:
         """
         if not query:
             return []
-        query = query.lower()
+
+        best_match = None
+        best_span = float('inf')
+        best_first = float('inf')
         text_lower = text.lower()
-        indices = []
-        pos = 0
-        for char in query:
-            pos = text_lower.find(char, pos)
-            if pos == -1:
-                return []
-            indices.append(pos)
-            pos += 1
-        return indices
+        query_lower = query.lower()
+
+        def dfs(q_idx: int, start: int, path: List[int]):
+            """Depth-first search to find the optimal fuzzy match indices."""
+            nonlocal best_match, best_span, best_first
+            # If matched all characters in the query, evaluate this path.
+            if q_idx == len(query_lower):
+                current_span = path[-1] - path[0] + 1
+                # Pick the match with the smallest span; on ties, pick earliest start.
+                if current_span < best_span or (current_span == best_span and path[0] < best_first):
+                    best_span = current_span
+                    best_first = path[0]
+                    best_match = path.copy()
+                return
+
+            for i in range(start, len(text_lower)):
+                if text_lower[i] == query_lower[q_idx]:
+                    path.append(i)
+                    dfs(q_idx + 1, i + 1, path)
+                    path.pop()
+
+        dfs(0, 0, [])
+        return best_match if best_match else []
 
     @staticmethod
-    def fuzzy_match_score(query: str, candidate: str) -> int:
-        """Compute the fuzzy match score based on how well the candidate string matches the query.
-        The algorithm rewards both contiguous matches in the candidate and matches occurring at the prefix.
-        
+    def fuzzy_match_score(query: str, candidate: str) -> float:
+        """Compute an improved fuzzy match score that better reflects the UX.
+
         Scoring Details:
-          - Each matched character contributes a base score.
-          - Matches that occur contiguously add an increasing bonus.
-          - If the candidate begins with the query, a fixed prefix bonus is awarded.
-          - If the entire query is not found in sequence, a score of 0 is returned.
-
-        Parameters:
-            query (str): The search query (case-insensitive).
-            candidate (str): The text in which to search for the query.
-
-        Returns:
-            int: The computed match score. A higher score indicates a better match.
+          - **Base Score:** 10 points per matched character.
+          - **Contiguous Bonus:** For each adjacent pair of matched characters, add 5 points.
+          - **Prefix Bonus:** If the candidate starts with the query, add 5 points.
+          - **Density Bonus:** Proportional bonus for how "tight" the match is.
 
         Examples:
             >>> TextUtil.fuzzy_match_score("pe", "Grape")
-            8
-            >>> TextUtil.fuzzy_match_score("pe", "Apple")
-            6
+            35.0
+            >>> round(TextUtil.fuzzy_match_score("pe", "Apple"), 2)
+            26.67
             >>> TextUtil.fuzzy_match_score("a", "Apple")
-            8
+            25.0
             >>> TextUtil.fuzzy_match_score("a", "Date")
-            3
+            20.0
             >>> TextUtil.fuzzy_match_score("nan", "Banana")
-            15
+            50.0
+            >>> TextUtil.fuzzy_match_score("ae", "Apple")
+            29.0
+            >>> round(TextUtil.fuzzy_match_score("ae", "Date"), 2)
+            26.67
+            >>> TextUtil.fuzzy_match_score("ae", "Removable item")
+            25.0
         """
-        # Normalize the candidate and query for case-insensitive matching.
-        candidate = candidate.lower()
-        qry = query.lower()
+        indices = TextUtil.fuzzy_match(query, candidate)
+        if not indices:
+            return 0.0
 
-        # Scoring parameters.
-        base_score = 1          # score for each matched character.
-        contiguous_bonus = 2    # bonus for each contiguous match.
-        prefix_bonus = 5        # bonus if candidate starts with the query.
+        # Base score: each matched character is worth 10 points
+        base_score = len(query) * 10
 
-        score = 0
-        consecutive = 0
-        query_index = 0
+        # Contiguous bonus: check consecutive indices
+        contiguous_bonus = 0
+        for i in range(1, len(indices)):
+            if indices[i] == indices[i - 1] + 1:
+                contiguous_bonus += 5
 
-        for char in candidate:
-            if query_index < len(qry) and char == qry[query_index]:
-                consecutive += 1
-                score += base_score + (consecutive * contiguous_bonus)
-                query_index += 1
-            else:
-                consecutive = 0
+        # Prefix bonus: add a bonus if the match starts at the beginning
+        prefix_bonus = 5 if indices[0] == 0 else 0
 
-        # If the entire query was not matched, return 0
-        if query_index != len(qry):
-            return 0
-
-        # Add prefix bonus if candidate starts with query.
-        if candidate.startswith(qry):
-            score += prefix_bonus
+        # Density bonus: a tighter match (smaller span) means the query letters are closer together.
+        # Span is the distance between the first and last match positions (inclusive).
+        span = indices[-1] - indices[0] + 1
+        density = len(query) / span
+        density_bonus = density * 10
+        score = base_score + contiguous_bonus + prefix_bonus + density_bonus
 
         return score
 
@@ -124,7 +131,7 @@ class TextUtil:
 class SearchHighlighter(QtGui.QSyntaxHighlighter):
     def __init__(self, parent, background_color: str = "#662"):
         """Initialize the highlighter with the associated document.
-        
+
         Args:
             parent (QTextDocument): The document to attach the highlighter to.
         """
@@ -135,7 +142,7 @@ class SearchHighlighter(QtGui.QSyntaxHighlighter):
 
     def set_search_text(self, text: str):
         """Update the search text and refresh highlighting.
-        
+
         Args:
             text (str): The search query.
         """
@@ -145,7 +152,7 @@ class SearchHighlighter(QtGui.QSyntaxHighlighter):
     def highlightBlock(self, text: str):
         """Called for each block (line) of text. Applies the highlight format
         based on the fuzzy matching positions from the query.
-        
+
         Args:
             text (str): The text in the current block.
         """
@@ -160,22 +167,26 @@ class SearchHighlighter(QtGui.QSyntaxHighlighter):
             self.setFormat(idx, 1, self.highlight_format)
 
 
-
 class DraggableItem(QtWidgets.QFrame):
     """A simple list item widget holding a label and a button.
 
     Args:
         text (str): Text to display.
-        parent (Optional[QtWidgets.QWidget]): Parent widget.
+        parent (Optional[QWidget]): Parent widget.
+        checkable (bool): If True, a checkbox is added to the item.
     """
 
     # Initialization and Setup
     # ------------------------
-    def __init__(self, text: str, parent: Optional[Union[QtWidgets.QWidget, 'DraggableListWidget']] = None):
-        super().__init__(parent)
+    def __init__(self, text: str,
+                 parent: Optional[Union[QtWidgets.QWidget, 'DraggableListWidget']] = None,
+                 checkable: bool = False,
+                 cursor: QtCore.Qt.CursorShape = QtCore.Qt.CursorShape.PointingHandCursor):
+        super().__init__(parent, cursor=cursor)
 
         # Store the arguments
         self._text = text
+        self._checkable = checkable
 
         # Initialize setup
         self.__init_ui()
@@ -193,10 +204,12 @@ class DraggableItem(QtWidgets.QFrame):
             self,
             maximumWidth=20,
             pixmap=TablerQIcon(opacity=0.6, stroke_width=1).grip_vertical.pixmap(20, 20),
-            cursor=QtCore.Qt.CursorShape.SizeAllCursor,
+            cursor=QtCore.Qt.CursorShape.OpenHandCursor,
             toolTip="Drag to reorder",
             styleSheet="padding: 0px; margin: 0px;"
         )
+        self.checkbox = QtWidgets.QCheckBox(self, visible=self._checkable)
+
         # TODO: Implement as class.
         # Use QPlainTextEdit so that QSyntaxHighlighter can be attached.
         self.label = QtWidgets.QPlainTextEdit(self)
@@ -217,6 +230,7 @@ class DraggableItem(QtWidgets.QFrame):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setAlignment(QtCore.Qt.AlignmentFlag.AlignLeft)
         layout.addWidget(self.drag_handle)
+        layout.addWidget(self.checkbox)
         layout.addWidget(self.label)
 
         self.additional_layout = QtWidgets.QHBoxLayout()
@@ -225,6 +239,7 @@ class DraggableItem(QtWidgets.QFrame):
         layout.addLayout(self.additional_layout)
 
     def set_text(self, text: str):
+        """Set the text of the item and rehighlight."""
         self._text = text
         self.label.setPlainText(text)
         self.highlighter.rehighlight()
@@ -234,30 +249,58 @@ class DraggableItem(QtWidgets.QFrame):
         """Return the text of the item.
         """
         return self._text
-    
+
     @text.setter
     def text(self, value: str):
         """Set the text of the item.
         """
         self.set_text(value)
 
+    def isChecked(self) -> bool:
+        """Return True if the item is checkable and the checkbox is checked,
+        otherwise False.
+        """
+        return self.checkbox.isChecked() if self.checkbox else False
+
+    def setChecked(self, state: bool):
+        """Sets the checked state of the item's checkbox if it is checkable.
+
+        Args:
+            state (bool): True to check, False to uncheck.
+        """
+        self.checkbox.setChecked(state)
+
+    def mousePressEvent(self, event: QtGui.QMouseEvent):
+        """Override the mouse press event for checkable items.
+        
+        For checkable items, if the click is outside the drag handle,
+        toggle the checkbox and do not propagate the event further (i.e. no drag).
+        """
+        if event.button() == QtCore.Qt.MouseButton.LeftButton and self._checkable:
+            # Toggle the checkbox if the click is inside the drag handle region.
+            if not self.drag_handle.geometry().contains(event.pos()):
+                if self.checkbox:
+                    self.checkbox.toggle()
+                event.accept()
+                return
+
+        # For non-checkable items or clicks on the drag handle, do the default action.
+        super().mousePressEvent(event)
+
 
 class DraggableListWidget(MomentumScrollArea):
-    """A scrollable draggable list with smooth animations supporting both
-    vertical and horizontal orientations.
+    """A scrollable draggable list with smooth animations supporting both vertical and horizontal orientations.
 
     In vertical mode, items are arranged top-to-bottom with fixed height,
     and the container's height is updated to include the item spacing and container margins.
-    In horizontal mode, items are arranged left-to-right with fixed width, and the container's width is updated similarly.
+    In horizontal mode, items are arranged left-to-right with fixed width.
 
     Args:
-        parent (Optional[QtWidgets.QWidget]): Parent widget.
-        orientation (QtCore.Qt.Orientation): Primary orientation for layout.
-            Use QtCore.Qt.Vertical (default) for a vertical list and
-            QtCore.Qt.Horizontal for a horizontal list.
-        spacing (int): Space in pixels between adjacent items.
-        container_margins (Optional[QtCore.QMargins]): Margins around items inside the container.
-            If None, defaults to 0 on all sides.
+        parent (Optional[QWidget]): Parent widget.
+        orientation (QtCore.Qt.Orientation): Orientation of the list.
+        spacing (int): Spacing between items.
+        container_margins (Optional[QMargins]): Margins around the container.
+        widgetResizable (bool): Whether the widget is resizable.
     """
 
     # Signals
@@ -289,7 +332,7 @@ class DraggableListWidget(MomentumScrollArea):
         """
         # The list of items in the current order.
         self.items: List[DraggableItem] = []
-        self._cached_order: Optional[List[DraggableItem]] = None
+        self.visible_items: Optional[List[DraggableItem]] = None
         self.dragged_item: Optional[QtWidgets.QWidget] = None
         self.dragged_index: int = -1
         self.drag_offset = QtCore.QPoint(0, 0)
@@ -314,14 +357,15 @@ class DraggableListWidget(MomentumScrollArea):
 
     # Public Methods
     # --------------
-    def add_item(self, text: str | DraggableItem) -> DraggableItem:
+    def add_item(self, text: str | DraggableItem, checkable: bool = False) -> DraggableItem:
         """Adds a new DraggableItem to the list.
 
         Args:
-            text (str or DraggableItem): The text for the new item or an existing DraggableItem.
+            text (str or DraggableItem): Text for the item, or an existing item.
+            checkable (bool): If True, the item will be created as checkable.
 
         Returns:
-            DraggableItem: The newly created item.
+            DraggableItem: The added item.
         """
         if isinstance(text, DraggableItem):
             # If the text is already a DraggableItem, set its parent to the container.
@@ -329,44 +373,46 @@ class DraggableListWidget(MomentumScrollArea):
             if item.parent() != self.container:
                 item.setParent(self.container)
         else:
-            # Create a new DraggableItem with the given text.
-            item = DraggableItem(text, self.container)
-
+            item = DraggableItem(text, self.container, checkable=checkable)
         if self.orientation == QtCore.Qt.Orientation.Vertical:
             item.setFixedHeight(self.item_height)
-            # Set width of the item to fill the container minus margins.
             item.setFixedWidth(self.container.width() - (self.container_margins.left() + self.container_margins.right()))
-        item.show()
         self.items.append(item)
-        # Reposition items instantly (without individual widget animation)
-        self._relayout_items()
+        idx = len(self.items) - 1
+        self._position_item(item, idx, animate=False)
+        self._update_container_size()
+        item.show()
         self.itemAdded.emit(item)
 
         return item
 
-    def scroll_to_last(scroll_area: MomentumScrollArea,
+    def _update_container_size(self):
+        """
+        Resize the container to fit `count` items (if given) or all items currently in self.items.
+        """
+        count = len(self.get_visible_items())
+        if self.orientation == QtCore.Qt.Orientation.Vertical:
+            total = (self.container_margins.top() + self.container_margins.bottom() +
+                    count * self.item_height + max(count - 1, 0) * self.spacing)
+            self.container.setFixedHeight(total)
+        else:
+            total = (self.container_margins.left() + self.container_margins.right() +
+                    count * self.item_width + max(count - 1, 0) * self.spacing)
+            self.container.setFixedWidth(total)
+
+    def scroll_to_last(self,
                        orientation: QtCore.Qt.Orientation = QtCore.Qt.Orientation.Vertical,
                        animate: bool = None):
         """Smoothly animate scrolling to the end ("last" position) of the scroll area.
-        For vertical orientation, it scrolls to the bottom.
-        For horizontal orientation, it scrolls to the right.
-        
-        Args:
-            scroll_area (MomentumScrollArea): The scroll area instance.
-            orientation (QtCore.Qt.Orientation): The orientation to scroll.
-                Use QtCore.Qt.Orientation.Vertical (default) or QtCore.Qt.Orientation.Horizontal.
-            animate (bool, optional): Whether to animate the scrolling.
-                If None, defaults to the scroll area's visibility (i.e. scroll_area.isVisible()).
-                If False, scrolling jumps directly without animation.
         """
         # Determine whether to use animation by default if not provided.
-        animate = scroll_area.isVisible() if animate is None else animate
+        animate = self.isVisible() if animate is None else animate
 
         # Choose the appropriate scroll bar and determine its target value.
         if orientation == QtCore.Qt.Orientation.Vertical:
-            scroll_bar = scroll_area.verticalScrollBar()
+            scroll_bar = self.verticalScrollBar()
         else:
-            scroll_bar = scroll_area.horizontalScrollBar()
+            scroll_bar = self.horizontalScrollBar()
 
         end_value = scroll_bar.maximum()
 
@@ -377,7 +423,7 @@ class DraggableListWidget(MomentumScrollArea):
 
         # Create and configure the scrolling animation.
         anim = QtCore.QPropertyAnimation(
-            scroll_bar, b"value", scroll_area,
+            scroll_bar, b"value", self,
             duration=250,
             startValue=scroll_bar.value(),
             endValue=end_value,
@@ -386,13 +432,13 @@ class DraggableListWidget(MomentumScrollArea):
         anim.start(QtCore.QAbstractAnimation.DeletionPolicy.DeleteWhenStopped)
 
     def item_at_pos(self, pos: QtCore.QPoint) -> Optional[int]:
-        """Returns the index of the item at the given container position.
+        """Returns the index of the item at a given container position.
 
         Args:
-            pos (QtCore.QPoint): The position relative to the container widget.
+            pos (QtCore.QPoint): Relative position.
 
         Returns:
-            Optional[int]: Index of the item if found; otherwise, None.
+            Optional[int]: Index if found, else None.
         """
         for i, widget in enumerate(self.items):
             if not widget.isVisible():
@@ -426,33 +472,23 @@ class DraggableListWidget(MomentumScrollArea):
             self.remove_item(item, relayout=False)
 
     def filter_items(self, query: str):
-        """Filter items based on the search query using fuzzy matching and scoring.
+        """Filter items based on the query using fuzzy matching and scoring.
 
-        Visible items are those whose original text contains the query's characters in order.
-        For visible items, update the highlighter and compute a similarity score using
-        TextUtil.fuzzy_match_score. Then sort the visible items by descending score.
-
-        While filtering, drag-to-reorder is disabled.
-        When the query is empty, the cached ordering (reflecting the user's custom order)
-        is restored.
+        When no query is given, restore the cached user-defined order.
+        Dragging is disabled while filtering.
         """
         if not query:
             # No filter query. Re-enable drag and restore the cached ordering if present.
             self._drag_enabled = True
-            if self._cached_order is not None:
-                self.items = list(self._cached_order)
-                self._cached_order = None
+            self.visible_items = None
             for item in self.items:
                 item.setVisible(True)
                 item.highlighter.set_search_text("")
         else:
             self._drag_enabled = False
-            # Cache the current ordering if this is the first filtering operation.
-            if self._cached_order is None:
-                self._cached_order = list(self.items)
             visible_items_with_score = []
             # Use the cached order as the base so that you return to it later.
-            for item in self._cached_order:
+            for item in self.items:
                 if TextUtil.fuzzy_match(query, item.text):
                     item.setVisible(True)
                     item.highlighter.set_search_text(query)
@@ -462,7 +498,7 @@ class DraggableListWidget(MomentumScrollArea):
                     item.setVisible(False)
             visible_items_with_score.sort(key=lambda tup: tup[1], reverse=True)
             sorted_items = [tup[0] for tup in visible_items_with_score]
-            self.items = sorted_items
+            self.visible_items = sorted_items
         self._relayout_items()
 
     def get_visible_items(self) -> List[DraggableItem]:
@@ -471,7 +507,15 @@ class DraggableListWidget(MomentumScrollArea):
         Returns:
             List[DraggableItem]: List of visible items.
         """
-        return [item for item in self.items if item.isVisible()]
+        return self.items if self.visible_items is None else self.visible_items
+
+    def get_checked_items(self) -> List[DraggableItem]:
+        """Return a list of all DraggableItem instances that are currently checked.
+
+        Returns:
+            List[DraggableItem]: Checked items in their current order.
+        """
+        return [item for item in self.items if item.isChecked()]
 
     def get_item_texts(self) -> List[str]:
         """Returns a list of texts from all items.
@@ -494,25 +538,25 @@ class DraggableListWidget(MomentumScrollArea):
     # Private Methods
     # ---------------
     def _mouse_press_event(self, event: QtGui.QMouseEvent) -> bool:
-        """Handles mouse press events on the container.
-
-        Args:
-            event (QtGui.QMouseEvent): The mouse press event.
-
-        Returns:
-            bool: True if handled.
+        """Handles mouse press events on the container. Only initiates a drag if the event
+        occurs over the drag handle of an item.
         """
         if not self._drag_enabled:
             return False
         if event.button() == QtCore.Qt.MouseButton.LeftButton:
             idx = self.item_at_pos(event.pos())
             if idx is not None:
-                self.dragged_item = self.items[idx]
-                self._original_index = idx
-                self.dragged_index = idx
-                self.drag_offset = event.pos() - self.dragged_item.pos()
-                self.dragged_item.raise_()
-                return True
+                item = self.items[idx]
+                # Map event position from container to item's coordinate system.
+                pos_in_item = item.mapFromParent(event.pos())
+                # Initiate drag only if click is inside the drag handle.
+                if item.drag_handle.geometry().contains(pos_in_item):
+                    self.dragged_item = item
+                    self._original_index = idx
+                    self.dragged_index = idx
+                    self.drag_offset = event.pos() - item.pos()
+                    item.raise_()
+                    return True
         return False
 
     def _mouse_move_event(self, event: QtGui.QMouseEvent) -> bool:
@@ -551,11 +595,12 @@ class DraggableListWidget(MomentumScrollArea):
                 self.items.pop(old_index)
                 self.items.insert(new_index, self.dragged_item)
                 self.dragged_index = new_index
-                self._animate_reposition_except(self.dragged_item)
+                self._animate_reposition_except(self.dragged_item, old_index, new_index)
             return True
         return False
 
     def _mouse_release_event(self, event: QtGui.QMouseEvent) -> bool:
+        """Handles mouse release events."""
         if event.button() == QtCore.Qt.MouseButton.LeftButton and self.dragged_item and self._drag_enabled:
             if self.orientation == QtCore.Qt.Orientation.Vertical:
                 final_y = self.container_margins.top() + self.dragged_index * (self.item_height + self.spacing)
@@ -574,6 +619,22 @@ class DraggableListWidget(MomentumScrollArea):
             return True
         return False
 
+    def _position_item(self, widget: DraggableItem, index: int, animate: bool = True):
+        """Position one widget at the given index."""
+        if self.orientation == QtCore.Qt.Orientation.Vertical:
+            x = self.container_margins.left()
+            y = self.container_margins.top() + index * (self.item_height + self.spacing)
+            widget.setFixedWidth(self.container.width() - 
+                                (self.container_margins.left() + self.container_margins.right()))
+        else:
+            x = self.container_margins.left() + index * (self.item_width + self.spacing)
+            y = self.container_margins.top()
+        target = QtCore.QPoint(x, y)
+        if animate:
+            self._animate_widget_to(widget, target)
+        else:
+            widget.move(target)
+
     def _relayout_items(self, animate: bool = None):
         """Positions all items according to the orientation, spacing, and margins.
 
@@ -584,54 +645,35 @@ class DraggableListWidget(MomentumScrollArea):
             animate (bool): Whether to animate item repositioning.
         """
         animate = self.isVisible() if animate is None else animate
-        visible_items = self.get_visible_items()
-        for i, widget in enumerate(visible_items):
-            if self.orientation == QtCore.Qt.Orientation.Vertical:
-                x = self.container_margins.left()
-                y = self.container_margins.top() + i * (self.item_height + self.spacing)
-                target_pos = QtCore.QPoint(x, y)
-                widget.setFixedWidth(self.container.width() - (self.container_margins.left() + self.container_margins.right()))
-            else:
-                x = self.container_margins.left() + i * (self.item_width + self.spacing)
-                y = self.container_margins.top()
-                target_pos = QtCore.QPoint(x, y)
-            if animate:
-                self._animate_widget_to(widget, target_pos)
-            else:
-                widget.move(target_pos)
-        if self.orientation == QtCore.Qt.Orientation.Vertical:
-            new_height = (self.container_margins.top() +
-                          self.container_margins.bottom() +
-                          len(visible_items) * self.item_height +
-                          (max(len(visible_items) - 1, 0)) * self.spacing)
-            self.container.setFixedHeight(new_height)
-        else:
-            new_width = (self.container_margins.left() +
-                         self.container_margins.right() +
-                         len(visible_items) * self.item_width +
-                         (max(len(visible_items) - 1, 0)) * self.spacing)
-            self.container.setFixedWidth(new_width)
 
-    def _animate_reposition_except(self, exclude_widget: QtWidgets.QWidget):
+        for i, w in enumerate(self.get_visible_items()):
+            self._position_item(w, i, animate)
+
+        # Resize container to fit all items.
+        self._update_container_size()
+
+    def _animate_reposition_except(self, exclude_widget: QtWidgets.QWidget, old_index: int, new_index: int):
         """Animates items to their new positions, except for the dragged widget.
 
         Args:
             exclude_widget (QtWidgets.QWidget): The widget to exclude.
         """
-        for widget in self.items:
-            if widget is exclude_widget or not widget.isVisible():
+        # Determine the range of affected indices
+        start, end = sorted((old_index, new_index))
+        for idx in range(start, end + 1):
+            widget = self.items[idx]
+            if widget is exclude_widget:
                 continue
+
+            # Compute target position based on the new index
             if self.orientation == QtCore.Qt.Orientation.Vertical:
-                idx = self.get_visible_items().index(widget)
                 x = self.container_margins.left()
                 y = self.container_margins.top() + idx * (self.item_height + self.spacing)
-                target_pos = QtCore.QPoint(x, y)
             else:
-                idx = self.get_visible_items().index(widget)
                 x = self.container_margins.left() + idx * (self.item_width + self.spacing)
                 y = self.container_margins.top()
-                target_pos = QtCore.QPoint(x, y)
-            self._animate_widget_to(widget, target_pos)
+
+            self._animate_widget_to(widget, QtCore.QPoint(x, y))
 
     def _animate_widget_to(self, widget: QtWidgets.QWidget, end_pos: QtCore.QPoint):
         """Animates a widget's position using QPropertyAnimation.
@@ -714,10 +756,11 @@ if __name__ == "__main__":
     )
 
     for fruit in ["Apple", "Banana", "Cherry", "Date", "Elderberry", "Fig", "Grape"]:
-        draggable_list_widget.add_item(fruit)
-    
+        # Create some items as checkable.
+        draggable_list_widget.add_item(fruit, checkable=True)
+
     for i in range(1, 4):
-        item = DraggableItem(f"Removable Item {i}", draggable_list_widget)
+        item = DraggableItem(f"Removable Item {i}", draggable_list_widget, checkable=True)
         button = QtWidgets.QPushButton("X", item)
         button.clicked.connect(lambda _, item=item: draggable_list_widget.remove_item(item))
         item.additional_layout.addWidget(button)
@@ -732,7 +775,7 @@ if __name__ == "__main__":
     def on_add_item():
         # Create a new item with a unique number.
         new_text = f"New Item {item_counter[0]}"
-        new_item = draggable_list_widget.add_item(new_text)
+        new_item = draggable_list_widget.add_item(new_text, checkable=True)
         print("Added item:", new_item.text)
         item_counter[0] += 1
         QtCore.QTimer.singleShot(0, lambda: draggable_list_widget.scroll_to_last())
