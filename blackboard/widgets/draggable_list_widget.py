@@ -386,6 +386,34 @@ class DraggableListWidget(MomentumScrollArea):
 
         return item
 
+    def add_items(self,
+                  texts: List[Union[str, DraggableItem]],
+                  checkable: bool = False
+                  ) -> List[DraggableItem]:
+        """
+        Efficiently add multiple items without any animation.
+
+        Args:
+            texts: A list of strings (or DraggableItem instances) to add.
+            checkable: If True, each new item will be created as checkable.
+        Returns:
+            The list of DraggableItem objects that were added.
+        """
+        # Temporarily turn off widget repaints for speed
+        self.container.setUpdatesEnabled(False)
+
+        new_items: List[DraggableItem] = []
+        for t in texts:
+            new_items.append(self.add_item(t, checkable=checkable))
+
+        # Lay out all items at once, without animation
+        self._relayout_items(animate=False)
+
+        # Restore painting and animation
+        self.container.setUpdatesEnabled(True)
+
+        return new_items
+
     def _update_container_size(self):
         """
         Resize the container to fit `count` items (if given) or all items currently in self.items.
@@ -482,6 +510,7 @@ class DraggableListWidget(MomentumScrollArea):
             self._drag_enabled = True
             self.visible_items = None
             for item in self.items:
+                item.drag_handle.setHidden(False)
                 item.setVisible(True)
                 item.highlighter.set_search_text("")
         else:
@@ -489,6 +518,7 @@ class DraggableListWidget(MomentumScrollArea):
             visible_items_with_score = []
             # Use the cached order as the base so that you return to it later.
             for item in self.items:
+                item.drag_handle.setHidden(True)
                 if TextUtil.fuzzy_match(query, item.text):
                     item.setVisible(True)
                     item.highlighter.set_search_text(query)
@@ -765,6 +795,8 @@ if __name__ == "__main__":
         button.clicked.connect(lambda _, item=item: draggable_list_widget.remove_item(item))
         item.additional_layout.addWidget(button)
         draggable_list_widget.add_item(item)
+
+    draggable_list_widget.add_items(["One", "Two", "Three"], checkable=True)
 
     search_field.textChanged.connect(draggable_list_widget.filter_items)
 

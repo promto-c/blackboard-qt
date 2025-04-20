@@ -28,6 +28,7 @@ from blackboard.widgets.button import TearOffWidgetAction
 from blackboard.widgets.tag_widget import TagListView
 from blackboard.widgets.scalable_view import ScalableView
 from blackboard.widgets.item_delegate import AdaptiveColorMappingDelegate, HighlightItemDelegate, ThumbnailDelegate
+from blackboard.widgets.draggable_list_widget import DraggableListWidget
 
 
 # Class Definitions
@@ -1132,6 +1133,7 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         # [2] - Add 'Manage Columns' section with actions for column management
         manage_columns_section_action = self.header_menu.addSection('Manage Columns')
         show_hide_column_menu = manage_columns_section_action.addMenu('Show/Hide Columns')
+        # TODO: Use `DraggableListWidget` to manage columns with `TearOffWidgetAction`
         self.column_management_widget = ColumnManagementWidget(self)
         column_management_widget_action = QtWidgets.QWidgetAction(self)
         column_management_widget_action.setDefaultWidget(self.column_management_widget)
