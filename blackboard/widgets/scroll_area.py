@@ -1,7 +1,7 @@
 # Standard Library Imports
 # ------------------------
 import sys
-from PyQt5 import QtWidgets, QtCore, QtGui
+from qtpy import QtWidgets, QtCore, QtGui
 
 # Local Imports
 # -------------
@@ -37,7 +37,7 @@ class FadingOverlay(QtWidgets.QWidget):
         self._scroll_area = scroll_area
         # Enable transparency and ensure the widget doesn't block mouse events.
         # self.setAttribute(QtCore.Qt.WA_NoSystemBackground)
-        self.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents)
+        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         # self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
         self.resize(self.parent().size())
         # Listen for resize events on the parent.
@@ -46,15 +46,15 @@ class FadingOverlay(QtWidgets.QWidget):
     def eventFilter(self, obj, event):
         """Filter events to adjust the overlay size on parent resize.
         """
-        if event.type() == QtCore.QEvent.Resize:
+        if event.type() == QtCore.QEvent.Type.Resize:
             self.resize(self.parent().size())
         return super().eventFilter(obj, event)
 
-    def paintEvent(self, event):
+    def paintEvent(self, event: QtGui.QPaintEvent | None):
         """Draw fading gradients based on scroll position and orientation.
         """
         painter = QtGui.QPainter(self)
-        painter.setRenderHint(QtGui.QPainter.Antialiasing, False)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, False)
         width = self.width()
         height = self.height()
   

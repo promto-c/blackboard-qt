@@ -24,7 +24,7 @@ from tablerqicon import TablerQIcon
 import blackboard as bb
 from blackboard import widgets
 from blackboard.widgets.momentum_scroll_widget import MomentumScrollArea
-from submodules.blackboard.blackboard.widgets.breadcrumb_widget import BreadcrumbWidget
+from blackboard.widgets.breadcrumb_widget import BreadcrumbWidget
 from blackboard.widgets.filter_widget import FilterWidget, MultiSelectFilterWidget
 from blackboard.utils.database.sql_query_builder import SQLQueryBuilder
 

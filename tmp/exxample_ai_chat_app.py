@@ -1,14 +1,97 @@
-from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QWidget, QTextEdit, QPushButton
-from PyQt5.QtCore import QThread, pyqtSignal
-from PyQt5 import QtGui
+from qtpy.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QWidget, QTextEdit, QPushButton
+from qtpy.QtCore import QThread, Signal
+from qtpy import QtCore, QtGui, QtWidgets
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import sys
 import torch
 from threading import Event
+# import os
+# os.environ["PYTORCH_MPS_HIGH_WATERMARK_RATIO"] = "0.0"
+
+
+class FlexPlainTextEdit(QtWidgets.QPlainTextEdit):
+
+    STYLE_SHEET = '''
+        QPlainTextEdit {
+            background-color: #222;
+            padding: 5px;
+        }
+    '''
+
+    activated = QtCore.Signal()
+
+    def __init__(self, parent=None, max_height: int = 300, tab_size: int = 4):
+        """Initialize the flexible plain text edit.
+
+        Args:
+            parent (Optional[QWidget]): The parent widget.
+            max_height (int): The maximum height the widget can expand to.
+            tab_size (int): Number of spaces to insert for a tab.
+        """
+        super().__init__(parent)
+        self.max_height = max_height
+        self.tab_size = tab_size
+        self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Minimum)
+        self.document().contentsChanged.connect(self.adjust_height_to_content)
+        self.setStyleSheet(self.STYLE_SHEET)
+
+    # Public Methods
+    # --------------
+    def adjust_height_to_content(self):
+        """Adjust the height of the widget to fit the document content, respecting the maximum height."""
+        self.setFixedHeight(min(self._calculate_content_height(), self.max_height))
+
+    # Private Methods
+    # ---------------
+    def _calculate_content_height(self):
+        """Calculate the total height needed to display the document content."""
+        block_count = self.document().blockCount()
+        # Get line height using font metrics
+        line_height = QtGui.QFontMetrics(self.font()).height()
+        # Calculate the new height and set it
+        document_height = block_count * line_height
+        
+        # vertical_margins = self.contentsMargins().top() + self.contentsMargins().bottom()
+        vertical_margins = 20
+
+        return document_height + vertical_margins
+
+    # Overridden Methods
+    # ------------------
+    def resizeEvent(self, event):
+        """Handle the widget's resize event."""
+        super().resizeEvent(event)
+        self.adjust_height_to_content()
+
+    def sizeHint(self):
+        """Override sizeHint to provide the height based on the document content."""
+        document_height = self._calculate_content_height()
+        return QtCore.QSize(self.viewport().width(), document_height)
+
+    def keyPressEvent(self, event: QtGui.QKeyEvent):
+        """Override keyPressEvent to handle tab key and Ctrl+Enter/Return."""
+        if event.key() in (QtCore.Qt.Key.Key_Return, QtCore.Qt.Key.Key_Enter) and event.modifiers() & QtCore.Qt.KeyboardModifier.ControlModifier:
+            self.activated.emit()
+            event.accept()
+        elif event.key() == QtCore.Qt.Key.Key_Tab:
+            cursor = self.textCursor()
+            # Get the text from the start of the line to the current cursor position
+            cursor.select(QtGui.QTextCursor.SelectionType.LineUnderCursor)
+            line_text = cursor.selectedText()
+
+            # Count leading spaces in the current line
+            leading_spaces = len(line_text) - len(line_text.lstrip(' '))
+
+            # Calculate how many spaces to add to reach the next tab stop
+            spaces_to_next_tab_stop = self.tab_size - (leading_spaces % self.tab_size)
+            self.insertPlainText(' ' * spaces_to_next_tab_stop)
+        else:
+            super().keyPressEvent(event)
+
 
 class ChatModelWorker(QThread):
-    update_text = pyqtSignal(str)
-    generation_finished = pyqtSignal()
+    update_text = Signal(str)
+    generation_finished = Signal()
 
     def __init__(self, model, tokenizer, prompt, device, stop_event):
         super().__init__()
@@ -78,7 +161,7 @@ class ChatWindow(QMainWindow):
         self.chat_area = QTextEdit(self)
         self.chat_area.setReadOnly(True)
 
-        self.input_area = QTextEdit(self)
+        self.input_area = FlexPlainTextEdit(self)
         self.input_area.setMaximumHeight(50)
 
         self.send_button = QPushButton("Send", self)
@@ -106,7 +189,13 @@ class ChatWindow(QMainWindow):
 
     def init_model(self):
         """Initialize the AI model and tokenizer."""
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        if torch.backends.mps.is_available():
+            self.device = torch.device("mps")
+        elif torch.cuda.is_available():
+            self.device = torch.device("cuda")
+        else:
+            self.device = torch.device("cpu")
+
         self.model_path = "ibm-granite/granite-3.0-2b-instruct"
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_path)
 
@@ -145,9 +234,9 @@ class ChatWindow(QMainWindow):
 
     def update_chat(self, text):
         # Append the new text to the chat area
-        self.chat_area.moveCursor(QtGui.QTextCursor.End)
+        self.chat_area.moveCursor(QtGui.QTextCursor.MoveOperation.End)
         self.chat_area.insertPlainText(text)
-        self.chat_area.moveCursor(QtGui.QTextCursor.End)
+        self.chat_area.moveCursor(QtGui.QTextCursor.MoveOperation.End)
 
     def on_generation_finished(self):
         # Clean up resources after generation is finished

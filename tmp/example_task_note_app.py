@@ -1,5 +1,3 @@
-from typing import List
-
 import os
 import re
 
@@ -32,7 +30,7 @@ class ResizeHandler(QtWidgets.QWidget):
         super().__init__(widget, self.WINDOW_FLAGS)
         self.widget = widget
         self.is_resizing = False
-        self.current_edge = None
+        self.current_edge = QtCore.Qt.Edge(0)
         self.mouse_pos = None
 
         # Store the allowed edges (default: all edges enabled)
@@ -267,12 +265,18 @@ class ResizeHandler(QtWidgets.QWidget):
         elif self.current_edge & QtCore.Qt.Edge.TopEdge or self.current_edge & QtCore.Qt.Edge.BottomEdge:
             self.widget.setCursor(QtCore.Qt.CursorShape.SizeVerCursor)
 
-    def detect_edge(self, pos):
-        """Detects which edge or corner the mouse is hovering over.
+    def detect_edge(self, pos: QtCore.QPoint) -> QtCore.Qt.Edge:
+        """Detect which edge or corner the mouse is hovering over.
+
+        Args:
+            pos (QtCore.QPoint): The current mouse position relative to the widget.
+
+        Returns:
+            QtCore.Qt.Edge: The edge or corner flag.
         """
         rect = self.widget.rect()
         margin = self.MARGIN
-        edge = 0
+        edge = QtCore.Qt.Edge(0)
 
         if pos.x() <= margin and self.allowed_edges & QtCore.Qt.Edge.LeftEdge:
             edge |= QtCore.Qt.Edge.LeftEdge
@@ -284,7 +288,7 @@ class ResizeHandler(QtWidgets.QWidget):
         elif pos.y() >= rect.height() - margin and self.allowed_edges & QtCore.Qt.Edge.BottomEdge:
             edge |= QtCore.Qt.Edge.BottomEdge
 
-        return edge if edge != 0 else None
+        return edge
 
 def process_markdown(content):
     """
