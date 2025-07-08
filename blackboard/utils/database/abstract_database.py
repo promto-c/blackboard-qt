@@ -303,6 +303,7 @@ class AbstractModel(ABC):
         """
         self._database = database
         self._name = model_name
+
     def query(self, fields: Optional[List[str]] = None,
               *,
               conditions: Optional[Dict[Union['GroupOperator', str], Any]] = None,

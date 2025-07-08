@@ -1,4 +1,3 @@
-
 # Type Checking Imports
 # ---------------------
 from typing import TYPE_CHECKING, Generator, List, Tuple, Union, Optional, Dict, Any
@@ -30,6 +29,16 @@ class ContextAwareRow(sqlite3.Row):
         return obj
 
     def __getitem__(self, key: str | int) -> Any:
+        """Retrieve a column by index or alias and, if a serializer exists,
+
+        deserialize it (handling grouped JSON arrays too).
+
+        Args:
+            key: Column index or alias.
+
+        Returns:
+            The raw or deserialized value for that column.
+        """
         # Get the original value.
         value = super().__getitem__(key)
 

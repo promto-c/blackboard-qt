@@ -74,6 +74,10 @@ class ScalableView(QtWidgets.QGraphicsView):
     def __init_ui(self):
         """Initialize the UI of the widget.
         """
+        # Make sure the widget is a *toplevel* before embedding.
+        if self.widget.parent() is not None:
+            self.widget.setParent(None)
+
         # Set the scene
         self.setScene(QtWidgets.QGraphicsScene(self))
         self.graphic_proxy_widget = self.scene().addWidget(self.widget)
@@ -91,7 +95,7 @@ class ScalableView(QtWidgets.QGraphicsView):
         # Key Binds
         # ---------
         # Create a QShortcut for the F key to reset the scaling of the view.
-        KeyBinder.bind_key('F', self, self.set_scale, QtCore.Qt.ShortcutContext.WindowShortcut)
+        KeyBinder.bind_key('F', self, self.set_scale, QtCore.Qt.ShortcutContext.WidgetWithChildrenShortcut)
 
     # Utility Methods
     # ---------------
