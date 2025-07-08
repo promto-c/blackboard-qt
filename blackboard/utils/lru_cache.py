@@ -20,15 +20,15 @@ class LRUCache:
 
     # Initialization
     # --------------
-    def __init__(self, max_memory: Optional[int] = None, memory_pct: 'Number' = 10.0):
+    def __init__(self, max_memory: Optional[int] = None, max_memory_percent: 'Number' = 10.0):
         """Initialize the cache.
 
         Args:
             max_memory: Maximum cache size in **bytes**. If `None`, it is
-                computed as `memory_pct` percent of the available RAM.
-            memory_pct: Fallback percentage when `max_memory` is `None`.
+                computed as `max_memory_percent` percent of the available RAM.
+            max_memory_percent: Fallback percentage when `max_memory` is `None`.
         """
-        self.max_memory = max_memory or int(self._get_available_memory() * float(memory_pct) / 100)
+        self.max_memory = max_memory or int(self._get_available_memory() * float(max_memory_percent) / 100)
         self.cache = OrderedDict()
         self.current_memory = 0
 
@@ -48,8 +48,8 @@ class LRUCache:
             result = func(*args, **kwargs)
             result_size = self._get_size(result)
 
-            # Skip caching objects that would never fit  ------------------- #
-            if result_size > self.max_memory:                              # ⬅︎ changed
+            # Skip caching objects that would never fit
+            if result_size > self.max_memory:
                 return result
 
             # Insert into cache
@@ -57,7 +57,7 @@ class LRUCache:
             self.current_memory += result_size
 
             # Evict until within budget
-            while self.current_memory > self.max_memory and self.cache:     # ⬅︎ changed
+            while self.current_memory > self.max_memory and self.cache:
                 self._evict()
 
             return result
@@ -108,7 +108,7 @@ class LRUCache:
 # Example usage
 # -------------
 if __name__ == "__main__":
-    @LRUCache(memory_pct=50)
+    @LRUCache(max_memory_percent=50)
     def expensive_computation(x: int, y: int) -> int:
         return x + y
 
