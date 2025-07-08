@@ -28,6 +28,8 @@ class LRUCache:
                 computed as `max_memory_percent` percent of the available RAM.
             max_memory_percent: Fallback percentage when `max_memory` is `None`.
         """
+        if max_memory is None and not 0 < max_memory_percent <= 100:
+            raise ValueError(f'max_memory_percent must be in (0, 100], got {max_memory_percent}.')
         self.max_memory = max_memory or int(self._get_available_memory() * float(max_memory_percent) / 100)
         self.cache = OrderedDict()
         self.current_memory = 0
@@ -74,7 +76,7 @@ class LRUCache:
         """
         return args, frozenset(kwargs.items())
 
-    def _evict(self) -> None:
+    def _evict(self):
         """Remove the least-recently-used item, if any.
         """
         if not self.cache:
@@ -83,7 +85,7 @@ class LRUCache:
         _, oldest_result = self.cache.popitem(last=False)
         self.current_memory = max(0, self.current_memory - self._get_size(oldest_result))
 
-    def clear_cache(self) -> None:
+    def clear_cache(self):
         """Clear the cache and reset memory counters.
         """
         self.cache.clear()
