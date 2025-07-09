@@ -16,10 +16,6 @@ if os.name == 'nt':
 else:
     import pwd
 
-# Local Imports
-# -------------
-from blackboard.utils.path_utils import PathPattern
-
 
 # Class Definitions
 # -----------------
@@ -256,29 +252,98 @@ class FormatStyle(Enum):
         """Determine if the format style requires separate ranges."""
         return self == FormatStyle.BRACKETS_SEPARATE_RANGES
 
+    @property
+    def regex(self) -> re.Pattern:
+        """Get the regex pattern for the format style."""
+        return FormatStyleMapping.to_regex(self)
+
+    @staticmethod
+    def from_path(sequence_path_format: str) -> Optional['FormatStyle']:
+        """Detect the format of the sequence path format.
+
+        Args:
+            sequence_path_format (str): The sequence path format.
+
+        Returns:
+            Optional[FormatStyle]: The detected format style, or None if no match is found.
+
+        Examples:
+            >>> FormatStyle.from_path('project/shot/comp_v1.######.exr')
+            <FormatStyle.HASH: 'hash'>
+
+            >>> FormatStyle.from_path('project/shot/comp_v1.%04d.exr')
+            <FormatStyle.PERCENT: 'percent'>
+
+            >>> FormatStyle.from_path('project/shot/comp_v1.[001001-001012].exr')
+            <FormatStyle.BRACKETS: 'brackets'>
+
+            >>> FormatStyle.from_path('project/shot/comp_v1.{1001..1002}.exr')
+            <FormatStyle.BRACES: 'braces'>
+
+            >>> FormatStyle.from_path('project/shot/comp_v1.[1001,1001-1002,1011-1012].exr')
+            <FormatStyle.BRACKETS_SEPARATE_RANGES: 'brackets_separate_ranges'>
+
+            >>> FormatStyle.from_path('project/shot/comp_v1.####.exr 0-9')
+            <FormatStyle.HASH_WITH_RANGE: 'hash_with_range'>
+
+            >>> FormatStyle.from_path('project/shot/comp_v1.%04d.exr 0-9')
+            <FormatStyle.PERCENT_WITH_RANGE: 'percent_with_range'>
+        """
+        return next((style for style, pattern in FormatStyleMapping.FORMAT_TO_REGEX.items() if pattern.match(sequence_path_format)), None)
+
+
+class FormatStyleMapping:
+
+    FORMAT_TO_REGEX = {
+        # NOTE: FormatStyle.HASH_WITH_RANGE and FormatStyle.PERCENT_WITH_RANGE
+        # should be ordered before the simpler HASH / PERCENT patterns so the
+        # more-specific variants are tested first.
+        FormatStyle.HASH_WITH_RANGE: re.compile(
+            r"^(?P<base_name>.*?)\.(?P<hashes>#+)\.(?P<extension>\w+)\s?"
+            r"(?P<start_frame>\d+)-(?P<end_frame>\d+)$"
+        ),
+        FormatStyle.PERCENT_WITH_RANGE: re.compile(
+            r"^(?P<base_name>.*?)\.%0(?P<padding>\d+)d\.(?P<extension>\w+)\s?"
+            r"(?P<start_frame>\d+)-(?P<end_frame>\d+)$"
+        ),
+        FormatStyle.HASH: re.compile(
+            r"^(?P<base_name>.*?)\.(?P<hashes>#+)\.(?P<extension>\w+)$"
+        ),
+        FormatStyle.PERCENT: re.compile(
+            r"^(?P<base_name>.*?)\.%0(?P<padding>\d+)d\.(?P<extension>\w+)$"
+        ),
+        FormatStyle.BRACKETS: re.compile(
+            r"^(?P<base_name>.*?)\.\[(?P<start_frame>\d+)-(?P<end_frame>\d+)\]"
+            r"\.(?P<extension>\w+)$"
+        ),
+        FormatStyle.BRACES: re.compile(
+            r"^(?P<base_name>.*?)\.\{(?P<start_frame>\d+)\.\.(?P<end_frame>\d+)\}"
+            r"\.(?P<extension>\w+)$"
+        ),
+        FormatStyle.BRACKETS_SEPARATE_RANGES: re.compile(
+            r"^(?P<base_name>.*?)\.\[(?P<ranges>[0-9,\-]+)\]\.(?P<extension>\w+)$"
+        ),
+    }
+
+    @classmethod
+    def to_regex(cls, format_style: 'FormatStyle') -> re.Pattern:
+        """Get the regex pattern for a specific format style.
+        """
+        return cls.FORMAT_TO_REGEX.get(format_style)
+
 
 class SequenceFileUtil(FileUtil):
-    """Utilities for working with sequence files."""
+    """Utilities for working with sequence files.
+    """
 
+    # Constant Definitions
+    # --------------------
     DEFAULT_PADDING = 4
 
     FILE_INFO_FIELDS = {
         *FileUtil.FILE_INFO_FIELDS,
         'sequence_range',
         'sequence_count',
-    }
-
-    FORMAT_TO_REGEX = {
-        # NOTE: FormatStyle.HASH_WITH_RANGE and FormatStyle.PERCENT_WITH_RANGE
-        # should be ordered before FormatStyle.HASH and FormatStyle.PERCENT to ensure
-        # that the more specific patterns with ranges are matched first.
-        FormatStyle.HASH_WITH_RANGE: re.compile(r"(?P<base_name>.*)\.(?P<hashes>#+)\.(?P<extension>\w+) (?P<start_frame>\d+)-(?P<end_frame>\d+)"),
-        FormatStyle.PERCENT_WITH_RANGE: re.compile(r"(?P<base_name>.*)\.%0(?P<padding>\d+)d\.(?P<extension>\w+) (?P<start_frame>\d+)-(?P<end_frame>\d+)"),
-        FormatStyle.HASH: re.compile(r"(?P<base_name>.*)\.(?P<hashes>#+)\.(?P<extension>\w+)"),
-        FormatStyle.PERCENT: re.compile(r"(?P<base_name>.*)\.%0(?P<padding>\d+)d\.(?P<extension>\w+)"),
-        FormatStyle.BRACKETS: re.compile(r"(?P<base_name>.*)\.\[(?P<start_frame>\d+)-(?P<end_frame>\d+)\]\.(?P<extension>\w+)"),
-        FormatStyle.BRACES: re.compile(r"(?P<base_name>.*)\.\{(?P<start_frame>\d+)\.\.(?P<end_frame>\d+)\}\.(?P<extension>\w+)"),
-        FormatStyle.BRACKETS_SEPARATE_RANGES: re.compile(r"(?P<base_name>.*)\.\[(?P<ranges>[0-9,\-]+)\]\.(?P<extension>\w+)"),
     }
 
     FORMAT_TO_PADDING_RULES = {
@@ -312,11 +377,11 @@ class SequenceFileUtil(FileUtil):
         Returns:
             Dict[str, str]: The extracted groups from the sequence path format.
         """
-        format_style = format_style or SequenceFileUtil.detect_sequence_format(sequence_path_format)
+        format_style = format_style or FormatStyle.from_path(sequence_path_format)
         if not format_style:
             raise ValueError("Unsupported format style")
 
-        match = SequenceFileUtil.FORMAT_TO_REGEX[format_style].match(sequence_path_format)
+        match = format_style.regex.match(sequence_path_format)
         if not match:
             raise ValueError("Invalid format")
         
@@ -335,7 +400,7 @@ class SequenceFileUtil(FileUtil):
         """
         # Detect format style and extract sequence details if input_data is a sequence path format string
         if isinstance(input_data, str):
-            format_style = format_style or SequenceFileUtil.detect_sequence_format(input_data)
+            format_style = format_style or FormatStyle.from_path(input_data)
             sequence_data = SequenceFileUtil.extract_sequence_details(input_data, format_style)
         # Use input_data directly if it's already a dictionary of sequence details
         elif isinstance(input_data, dict):
@@ -427,40 +492,6 @@ class SequenceFileUtil(FileUtil):
         return parts[-2].isdigit()
 
     @staticmethod
-    def detect_sequence_format(sequence_path_format: str) -> Optional['FormatStyle']:
-        """Detect the format of the sequence path format.
-
-        Args:
-            sequence_path_format (str): The sequence path format.
-
-        Returns:
-            Optional[FormatStyle]: The detected format style, or None if no match is found.
-
-        Examples:
-            >>> SequenceFileUtil.detect_sequence_format('project/shot/comp_v1.######.exr')
-            <FormatStyle.HASH: 'hash'>
-
-            >>> SequenceFileUtil.detect_sequence_format('project/shot/comp_v1.%04d.exr')
-            <FormatStyle.PERCENT: 'percent'>
-
-            >>> SequenceFileUtil.detect_sequence_format('project/shot/comp_v1.[001001-001012].exr')
-            <FormatStyle.BRACKETS: 'brackets'>
-
-            >>> SequenceFileUtil.detect_sequence_format('project/shot/comp_v1.{1001..1002}.exr')
-            <FormatStyle.BRACES: 'braces'>
-
-            >>> SequenceFileUtil.detect_sequence_format('project/shot/comp_v1.[1001,1001-1002,1011-1012].exr')
-            <FormatStyle.BRACKETS_SEPARATE_RANGES: 'brackets_separate_ranges'>
-
-            >>> SequenceFileUtil.detect_sequence_format('project/shot/comp_v1.####.exr 0-9')
-            <FormatStyle.HASH_WITH_RANGE: 'hash_with_range'>
-
-            >>> SequenceFileUtil.detect_sequence_format('project/shot/comp_v1.%04d.exr 0-9')
-            <FormatStyle.PERCENT_WITH_RANGE: 'percent_with_range'>
-        """
-        return next((style for style, pattern in SequenceFileUtil.FORMAT_TO_REGEX.items() if pattern.match(sequence_path_format)), None)
-
-    @staticmethod
     def construct_file_paths(base_name: str, frames: List[int], extension: str, padding: int = 0) -> List[str]:
         """Construct file paths based on the base name, list of frames, and extension.
 
@@ -488,7 +519,7 @@ class SequenceFileUtil(FileUtil):
             str: The generated file path for the specified frame.
         """
         # Detect the format style if not provided
-        format_style = format_style or SequenceFileUtil.detect_sequence_format(sequence_path_format)
+        format_style = format_style or FormatStyle.from_path(sequence_path_format)
         if not format_style:
             raise ValueError("Unsupported format style")
 
@@ -518,7 +549,7 @@ class SequenceFileUtil(FileUtil):
             List[str]: A list of individual file paths.
         """
         # Detect the format style if not provided
-        format_style = format_style or SequenceFileUtil.detect_sequence_format(sequence_path_format)
+        format_style = format_style or FormatStyle.from_path(sequence_path_format)
         if not format_style:
             raise ValueError("Unsupported format style")
 
@@ -566,21 +597,23 @@ class SequenceFileUtil(FileUtil):
         return sorted(file_paths)
 
     @staticmethod
-    def parse_sequence_file_name(file_name: str) -> Tuple[str, str, str]:
+    def parse_sequence_file_name(file_name: str, check_digit: bool = True) -> Tuple[str, str, str]:
         """Parse sequence information from a file name.
 
         Args:
             file_name (str): The file name to extract information from.
+            check_digit (bool): Whether to verify the frame token is numeric. Pass `False` to allow any
+                token (e.g., '####', '%04d'). Defaults to `True`.
 
         Returns:
             Tuple[str, str, str]: A tuple containing the base name, sequence number, and extension
                 if the file name follows the sequence pattern, otherwise a tuple of Nones.
         """
         parts = file_name.rsplit('.', 2)
-        if len(parts) == 3 and parts[1].isdigit():
-            return tuple(parts)
-        else:
+        if len(parts) != 3 or (check_digit and not parts[1].isdigit()):
             return None, None, None
+
+        return tuple(parts)
 
     @staticmethod
     def get_sequence_range(sequence_numbers: List[str]) -> Tuple[int, int]:
@@ -819,7 +852,7 @@ class SequenceFileUtil(FileUtil):
                 - sequence_range: The range of sequence numbers if the file is part of a sequence, as a string in the format 'start-end'.
         """
         # Detect the format style of the sequence file path
-        format_style = SequenceFileUtil.detect_sequence_format(file_path)
+        format_style = FormatStyle.from_path(file_path)
         # If the format style is not detected, handle it as a regular file and extract info
         if not format_style:
             return FileUtil.extract_file_info(file_path)
@@ -872,7 +905,7 @@ class FilePathWalker:
 
     @staticmethod
     def traverse_directories(root: str, target_depth: Optional[int] = None, is_skip_hidden: bool = True,
-                             is_return_relative: bool = False, excluded_folders: List[str] = list(),
+                             is_return_relative: bool = False, excluded_folders: Optional[List[str]] = None,
                             ) -> Generator[str, None, None]:
         """Traverse directory paths from a root directory, optionally returning relative paths.
 
@@ -1114,6 +1147,114 @@ class FilePathWalker:
             (is_skip_hidden and dir_name.startswith('.')) or
             (excluded_folders and dir_name in excluded_folders)
         )
+
+
+class PathPattern:
+    """A utility class for handling and manipulating file path patterns with named placeholders.
+    """
+
+    # Define regex pattern for variable placeholders
+    VARIABLE_PLACEHOLDER_PATTERN = r'\{(\w+)\}'
+
+    @staticmethod
+    def format_by_index(pattern: str, values: List[str]) -> str:
+        """Formats a string with named placeholders using indexed arguments by replacing all named placeholders with '{}'.
+        
+        Args:
+            pattern (str): The string pattern with named placeholders.
+            values (List[str]): Arguments to fill the placeholders, provided by index.
+        
+        Returns:
+            str: The formatted string.
+        
+        Examples:
+            >>> PathPattern.format_by_index("File {name} has size {size} bytes.", ["example.txt", "1024"])
+            'File example.txt has size 1024 bytes.'
+            >>> PathPattern.format_by_index("No placeholders here!", [])
+            'No placeholders here!'
+            >>> PathPattern.format_by_index("{first} {second} {third}", ["1", "2", "3"])
+            '1 2 3'
+        """
+        # Replace all named placeholders with '{}' in one go
+        formatted_pattern = re.sub(PathPattern.VARIABLE_PLACEHOLDER_PATTERN, '{}', pattern)
+        
+        # Use str.format with the modified pattern
+        return formatted_pattern.format(*values)
+
+    @staticmethod
+    def convert_pattern_to_regex(pattern: str) -> str:
+        """Converts a string pattern with variables in curly braces to a regex pattern that captures across directory names.
+
+        Args:
+            pattern (str): A string containing the pattern, with variables enclosed in curly braces.
+
+        Returns:
+            str: The converted regular expression pattern.
+
+        Examples:
+            >>> PathPattern.convert_pattern_to_regex("path/to/{var1}/and/{var2}/")
+            'path/to/(?P<var1>.*?)/and/(?P<var2>.*?)/'
+        """
+        # Escape all regex characters except for the curly braces which are used for variables
+        pattern = re.escape(pattern).replace(r'\{', '{').replace(r'\}', '}')
+        # Use a non-greedy match up to the next literal slash or end of string, which allows variable capture over multiple segments
+        regex_pattern = re.sub(PathPattern.VARIABLE_PLACEHOLDER_PATTERN, r'(?P<\1>.*?)', pattern)
+
+        return regex_pattern
+
+    @staticmethod
+    def extract_variables(pattern: str, path: str, is_regex: bool = False) -> Dict[str, str]:
+        """Extracts variables from a given path based on a specified pattern.
+
+        Args:
+            pattern (str): The pattern as a string with variables in curly braces or a regex pattern.
+            path (str): The path string from which to extract variable values.
+            is_regex (bool): Boolean flag to indicate if the pattern is a regex.
+
+        Returns:
+            Dict[str, str]: A dictionary of variable names and their corresponding values if the path matches the pattern,
+                or an empty dictionary if there is no match.
+
+        Examples:
+            >>> PathPattern.extract_variables("path/to/{var1}/and/{var2}/", "path/to/value1/and/value2/")
+            {'var1': 'value1', 'var2': 'value2'}
+            >>> PathPattern.extract_variables("projects\{project_name}\seq_{sequence_name}\{shot_name}\work_files",
+            ...                               "projects\ProjectB\seq_seq01\shot03\work_files\texture.png")
+            {'project_name': 'ProjectB', 'sequence_name': 'seq01', 'shot_name': 'shot03'}
+            >>> PathPattern.extract_variables("projects/{project_name}/seq_{sequence_name}/{shot_name}/work_files",
+            ...                               "projects/ProjectB/seq_seq02/shot04/01/work_files/texture.png")
+            {'project_name': 'ProjectB', 'sequence_name': 'seq02', 'shot_name': 'shot04/01'}
+            >>> PathPattern.extract_variables(r'path/to/(?P<var1>\w+)/and/(?P<var2>\w+)/', "path/to/value1/and/value2/", is_regex=True)
+            {'var1': 'value1', 'var2': 'value2'}
+        """
+        # Convert the pattern to a regex pattern if not already a regex
+        regex_pattern = pattern if is_regex else PathPattern.convert_pattern_to_regex(pattern)
+
+        # Match the regex pattern against the provided path
+        match = re.match(regex_pattern, path)
+        if match:
+            return match.groupdict()
+        return {}
+
+    @staticmethod
+    def extract_variable_names(pattern: str) -> List[str]:
+        """Extract only the variable names from the pattern, excluding the static parts.
+
+        Args:
+            pattern (str): The string pattern with variables in curly braces.
+
+        Returns:
+            List[str]: A list of variable names.
+
+        Examples:
+            >>> PathPattern.extract_variable_names("blackboard/examples/projects/{project_name}/seq_{sequence_name}/{shot_name}/work_files")
+            ['project_name', 'sequence_name', 'shot_name']
+            >>> PathPattern.extract_variable_names("{var1}/static/{var2}/end")
+            ['var1', 'var2']
+            >>> PathPattern.extract_variable_names("no/dynamic/parts")
+            []
+        """
+        return re.findall(PathPattern.VARIABLE_PLACEHOLDER_PATTERN, pattern)
 
 
 class FilePatternQuery:
