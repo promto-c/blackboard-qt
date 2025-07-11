@@ -23,8 +23,7 @@ import cv2
 
 # Local Imports
 # -------------
-from blackboard.utils.path_utils import PathSequence
-from blackboard.utils.file_path_utils import FileUtil
+from blackboard.utils.file_path_utils import FileUtil, SequencePath
 from blackboard.utils.external.dpx_metadata_reader import DPXMetadata
 from blackboard.utils.lru_cache import LRUCache
 
@@ -352,7 +351,7 @@ class ImageSequence:
     def __init_attributes(self):
         """Initialize the attributes.
         """
-        self.path_sequence = PathSequence(self.input_path)
+        self.path_sequence = SequencePath.from_path(self.input_path)
 
     @LRUCache()
     def read_image(self, file_path: str):
@@ -364,8 +363,9 @@ class ImageSequence:
     
     # From Path Sequence
     # ------------------
+    @property
     def frame_range(self):
-        return self.path_sequence.get_frame_range()
+        return self.path_sequence.frame_range
 
     def get_frame_path(self, frame: 'Number'):
         return self.path_sequence.get_frame_path(frame)

@@ -10,6 +10,7 @@ import glob, os, datetime, re
 from itertools import product
 from enum import Enum
 from collections import defaultdict
+from dataclasses import dataclass
 
 if os.name == 'nt':
     import win32security
@@ -19,6 +20,45 @@ else:
 
 # Class Definitions
 # -----------------
+@dataclass(frozen=True, slots=True)
+class SequencePath:
+    """Store parsed information for a sequence-style path/format.
+    """
+    raw: str
+    format_style: 'SequenceFormat'
+    base_name: str
+    extension: str
+    padding: int
+    frame_range: Optional[Tuple[int, int]]
+
+    def __str__(self) -> str:
+        return self.raw
+
+    @staticmethod
+    def from_path(sequence_path_format: str, scan_disk: bool = True) -> 'SequencePath':
+        """Create a SequencePath instance from a sequence path format.
+
+        Args:
+            sequence_path_format (str): The sequence path format.
+            scan_disk (bool): Whether to scan the disk for existing files to determine the frame range.
+
+        Returns:
+            SequencePath: An instance containing parsed information from the sequence path format.
+        """
+        return SequenceFileUtil.parse_sequence_path(sequence_path_format, scan_disk=scan_disk)
+
+    def get_frame_path(self, frame_number: Union[int, str]) -> str:
+        """Generate the file path for a specific frame number based on the sequence path format.
+
+        Args:
+            frame_number (Union[int, str]): The frame number to generate the path for.
+
+        Returns:
+            str: The generated file path for the specified frame.
+        """
+        return SequenceFileUtil.generate_frame_path(self.raw, frame_number, format_style=self.format_style)
+
+
 class FileUtil:
     """Utilities for working with files.
     """
@@ -233,7 +273,7 @@ class FileUtil:
         return filtered_file_paths
 
 
-class FormatStyle(Enum):
+class SequenceFormat(Enum):
     """Enum for different placeholder formats for file sequences.
     """
     HASH = 'hash'                                           # '#'
@@ -246,87 +286,87 @@ class FormatStyle(Enum):
 
     def requires_range(self) -> bool:
         """Determine if the format style requires a range of frame numbers."""
-        return self in {FormatStyle.BRACKETS, FormatStyle.BRACES, FormatStyle.HASH_WITH_RANGE, FormatStyle.PERCENT_WITH_RANGE}
+        return self in {SequenceFormat.BRACKETS, SequenceFormat.BRACES, SequenceFormat.HASH_WITH_RANGE, SequenceFormat.PERCENT_WITH_RANGE}
 
     def requires_separate_ranges(self) -> bool:
         """Determine if the format style requires separate ranges."""
-        return self == FormatStyle.BRACKETS_SEPARATE_RANGES
+        return self == SequenceFormat.BRACKETS_SEPARATE_RANGES
 
     @property
     def regex(self) -> re.Pattern:
         """Get the regex pattern for the format style."""
-        return FormatStyleMapping.to_regex(self)
+        return SequenceFormatMapping.to_regex(self)
 
     @staticmethod
-    def from_path(sequence_path_format: str) -> Optional['FormatStyle']:
+    def from_path(sequence_path_format: str) -> Optional['SequenceFormat']:
         """Detect the format of the sequence path format.
 
         Args:
             sequence_path_format (str): The sequence path format.
 
         Returns:
-            Optional[FormatStyle]: The detected format style, or None if no match is found.
+            Optional[SequenceFormat]: The detected format style, or None if no match is found.
 
         Examples:
-            >>> FormatStyle.from_path('project/shot/comp_v1.######.exr')
-            <FormatStyle.HASH: 'hash'>
+            >>> SequenceFormat.from_path('project/shot/comp_v1.######.exr')
+            <SequenceFormat.HASH: 'hash'>
 
-            >>> FormatStyle.from_path('project/shot/comp_v1.%04d.exr')
-            <FormatStyle.PERCENT: 'percent'>
+            >>> SequenceFormat.from_path('project/shot/comp_v1.%04d.exr')
+            <SequenceFormat.PERCENT: 'percent'>
 
-            >>> FormatStyle.from_path('project/shot/comp_v1.[001001-001012].exr')
-            <FormatStyle.BRACKETS: 'brackets'>
+            >>> SequenceFormat.from_path('project/shot/comp_v1.[001001-001012].exr')
+            <SequenceFormat.BRACKETS: 'brackets'>
 
-            >>> FormatStyle.from_path('project/shot/comp_v1.{1001..1002}.exr')
-            <FormatStyle.BRACES: 'braces'>
+            >>> SequenceFormat.from_path('project/shot/comp_v1.{1001..1002}.exr')
+            <SequenceFormat.BRACES: 'braces'>
 
-            >>> FormatStyle.from_path('project/shot/comp_v1.[1001,1001-1002,1011-1012].exr')
-            <FormatStyle.BRACKETS_SEPARATE_RANGES: 'brackets_separate_ranges'>
+            >>> SequenceFormat.from_path('project/shot/comp_v1.[1001,1001-1002,1011-1012].exr')
+            <SequenceFormat.BRACKETS_SEPARATE_RANGES: 'brackets_separate_ranges'>
 
-            >>> FormatStyle.from_path('project/shot/comp_v1.####.exr 0-9')
-            <FormatStyle.HASH_WITH_RANGE: 'hash_with_range'>
+            >>> SequenceFormat.from_path('project/shot/comp_v1.####.exr 0-9')
+            <SequenceFormat.HASH_WITH_RANGE: 'hash_with_range'>
 
-            >>> FormatStyle.from_path('project/shot/comp_v1.%04d.exr 0-9')
-            <FormatStyle.PERCENT_WITH_RANGE: 'percent_with_range'>
+            >>> SequenceFormat.from_path('project/shot/comp_v1.%04d.exr 0-9')
+            <SequenceFormat.PERCENT_WITH_RANGE: 'percent_with_range'>
         """
-        return next((style for style, pattern in FormatStyleMapping.FORMAT_TO_REGEX.items() if pattern.match(sequence_path_format)), None)
+        return next((style for style, pattern in SequenceFormatMapping.FORMAT_TO_REGEX.items() if pattern.match(sequence_path_format)), None)
 
 
-class FormatStyleMapping:
+class SequenceFormatMapping:
 
     FORMAT_TO_REGEX = {
-        # NOTE: FormatStyle.HASH_WITH_RANGE and FormatStyle.PERCENT_WITH_RANGE
+        # NOTE: SequenceFormat.HASH_WITH_RANGE and SequenceFormat.PERCENT_WITH_RANGE
         # should be ordered before the simpler HASH / PERCENT patterns so the
         # more-specific variants are tested first.
-        FormatStyle.HASH_WITH_RANGE: re.compile(
+        SequenceFormat.HASH_WITH_RANGE: re.compile(
             r"^(?P<base_name>.*?)\.(?P<hashes>#+)\.(?P<extension>\w+)\s?"
             r"(?P<start_frame>\d+)-(?P<end_frame>\d+)$"
         ),
-        FormatStyle.PERCENT_WITH_RANGE: re.compile(
+        SequenceFormat.PERCENT_WITH_RANGE: re.compile(
             r"^(?P<base_name>.*?)\.%0(?P<padding>\d+)d\.(?P<extension>\w+)\s?"
             r"(?P<start_frame>\d+)-(?P<end_frame>\d+)$"
         ),
-        FormatStyle.HASH: re.compile(
+        SequenceFormat.HASH: re.compile(
             r"^(?P<base_name>.*?)\.(?P<hashes>#+)\.(?P<extension>\w+)$"
         ),
-        FormatStyle.PERCENT: re.compile(
+        SequenceFormat.PERCENT: re.compile(
             r"^(?P<base_name>.*?)\.%0(?P<padding>\d+)d\.(?P<extension>\w+)$"
         ),
-        FormatStyle.BRACKETS: re.compile(
+        SequenceFormat.BRACKETS: re.compile(
             r"^(?P<base_name>.*?)\.\[(?P<start_frame>\d+)-(?P<end_frame>\d+)\]"
             r"\.(?P<extension>\w+)$"
         ),
-        FormatStyle.BRACES: re.compile(
+        SequenceFormat.BRACES: re.compile(
             r"^(?P<base_name>.*?)\.\{(?P<start_frame>\d+)\.\.(?P<end_frame>\d+)\}"
             r"\.(?P<extension>\w+)$"
         ),
-        FormatStyle.BRACKETS_SEPARATE_RANGES: re.compile(
+        SequenceFormat.BRACKETS_SEPARATE_RANGES: re.compile(
             r"^(?P<base_name>.*?)\.\[(?P<ranges>[0-9,\-]+)\]\.(?P<extension>\w+)$"
         ),
     }
 
     @classmethod
-    def to_regex(cls, format_style: 'FormatStyle') -> re.Pattern:
+    def to_regex(cls, format_style: 'SequenceFormat') -> re.Pattern:
         """Get the regex pattern for a specific format style.
         """
         return cls.FORMAT_TO_REGEX.get(format_style)
@@ -347,37 +387,37 @@ class SequenceFileUtil(FileUtil):
     }
 
     FORMAT_TO_PADDING_RULES = {
-        FormatStyle.HASH: lambda match_data: len(match_data['hashes']),
-        FormatStyle.PERCENT: lambda match_data: int(match_data['padding']),
-        FormatStyle.BRACKETS: lambda match_data: len(match_data['start_frame']),
-        FormatStyle.BRACES: lambda match_data: len(match_data['start_frame']),
-        FormatStyle.HASH_WITH_RANGE: lambda match_data: len(match_data['hashes']),
-        FormatStyle.PERCENT_WITH_RANGE: lambda match_data: int(match_data['padding']),
-        FormatStyle.BRACKETS_SEPARATE_RANGES: lambda match_data: len(match_data['ranges'].split(',')[0].split('-')[0]),
+        SequenceFormat.HASH: lambda match_data: len(match_data['hashes']),
+        SequenceFormat.PERCENT: lambda match_data: int(match_data['padding']),
+        SequenceFormat.BRACKETS: lambda match_data: len(match_data['start_frame']),
+        SequenceFormat.BRACES: lambda match_data: len(match_data['start_frame']),
+        SequenceFormat.HASH_WITH_RANGE: lambda match_data: len(match_data['hashes']),
+        SequenceFormat.PERCENT_WITH_RANGE: lambda match_data: int(match_data['padding']),
+        SequenceFormat.BRACKETS_SEPARATE_RANGES: lambda match_data: len(match_data['ranges'].split(',')[0].split('-')[0]),
     }
 
     FORMAT_TO_STRING_PATTERNS = {
-        FormatStyle.HASH: "{base_name}.{range_str}.{extension}",
-        FormatStyle.PERCENT: "{base_name}.%0{padding}d.{extension}",
-        FormatStyle.BRACKETS: "{base_name}.[{start_frame:0{padding}}-{end_frame:0{padding}}].{extension}",
-        FormatStyle.BRACES: "{base_name}.{{{start_frame:0{padding}}..{end_frame:0{padding}}}}.{extension}",
-        FormatStyle.HASH_WITH_RANGE: "{base_name}.{range_str}.{extension} {start_frame}-{end_frame}",
-        FormatStyle.PERCENT_WITH_RANGE: "{base_name}.%0{padding}d.{extension} {start_frame}-{end_frame}",
-        FormatStyle.BRACKETS_SEPARATE_RANGES: "{base_name}.[{range_str}].{extension}",
+        SequenceFormat.HASH: "{base_name}.{range_str}.{extension}",
+        SequenceFormat.PERCENT: "{base_name}.%0{padding}d.{extension}",
+        SequenceFormat.BRACKETS: "{base_name}.[{start_frame:0{padding}}-{end_frame:0{padding}}].{extension}",
+        SequenceFormat.BRACES: "{base_name}.{{{start_frame:0{padding}}..{end_frame:0{padding}}}}.{extension}",
+        SequenceFormat.HASH_WITH_RANGE: "{base_name}.{range_str}.{extension} {start_frame}-{end_frame}",
+        SequenceFormat.PERCENT_WITH_RANGE: "{base_name}.%0{padding}d.{extension} {start_frame}-{end_frame}",
+        SequenceFormat.BRACKETS_SEPARATE_RANGES: "{base_name}.[{range_str}].{extension}",
     }
 
     @staticmethod
-    def extract_sequence_details(sequence_path_format: str, format_style: Optional['FormatStyle'] = None) -> Dict[str, str]:
+    def extract_sequence_details(sequence_path_format: str, format_style: Optional['SequenceFormat'] = None) -> Dict[str, str]:
         """Extract groups from the sequence path format.
 
         Args:
             sequence_path_format (str): The sequence path format.
-            format_style (Optional[FormatStyle]): The format style to use, if not provided, it will be detected.
+            format_style (Optional[SequenceFormat]): The format style to use, if not provided, it will be detected.
 
         Returns:
             Dict[str, str]: The extracted groups from the sequence path format.
         """
-        format_style = format_style or FormatStyle.from_path(sequence_path_format)
+        format_style = format_style or SequenceFormat.from_path(sequence_path_format)
         if not format_style:
             raise ValueError("Unsupported format style")
 
@@ -388,19 +428,19 @@ class SequenceFileUtil(FileUtil):
         return match.groupdict()
 
     @staticmethod
-    def get_padding(input_data: Union[Dict[str, str], str], format_style: Optional[FormatStyle] = None) -> int:
+    def get_padding(input_data: Union[Dict[str, str], str], format_style: Optional[SequenceFormat] = None) -> int:
         """Determine the padding for sequence numbers based on the format style and match groups or sequence path format.
 
         Args:
             input_data (Union[dict, str]): The match groups from the regex or the sequence path format.
-            format_style (Optional[FormatStyle]): The format style to use, if not provided, it will be detected.
+            format_style (Optional[SequenceFormat]): The format style to use, if not provided, it will be detected.
 
         Returns:
             int: The number of digits to pad the sequence numbers.
         """
         # Detect format style and extract sequence details if input_data is a sequence path format string
         if isinstance(input_data, str):
-            format_style = format_style or FormatStyle.from_path(input_data)
+            format_style = format_style or SequenceFormat.from_path(input_data)
             sequence_data = SequenceFileUtil.extract_sequence_details(input_data, format_style)
         # Use input_data directly if it's already a dictionary of sequence details
         elif isinstance(input_data, dict):
@@ -416,12 +456,12 @@ class SequenceFileUtil(FileUtil):
         return SequenceFileUtil.FORMAT_TO_PADDING_RULES.get(format_style, lambda _: SequenceFileUtil.DEFAULT_PADDING)(sequence_data)
 
     @staticmethod
-    def construct_sequence_file_path(format_style: 'FormatStyle', base_name: str, frame_numbers: List[str], extension: str,
+    def construct_sequence_file_path(format_style: 'SequenceFormat', base_name: str, frame_numbers: List[str], extension: str,
                                      padding: int = DEFAULT_PADDING) -> str:
         """Construct the formatted sequence file path based on the specified format style using cached patterns.
 
         Args:
-            format_style (FormatStyle): The format style to use, determining the pattern applied to the sequence.
+            format_style (SequenceFormat): The format style to use, determining the pattern applied to the sequence.
             base_name (str): The base name of the sequence.
             frame_numbers (List[str]): The list of frame numbers to be included in the sequence.
             extension (str): The file extension to be appended to the formatted sequence.
@@ -434,13 +474,13 @@ class SequenceFileUtil(FileUtil):
             ValueError: If the provided format style is unsupported.
 
         Examples:
-            >>> SequenceFileUtil.construct_sequence_file_path(FormatStyle.HASH, 'image', ['1', '2', '3'], 'jpg', 4)
+            >>> SequenceFileUtil.construct_sequence_file_path(SequenceFormat.HASH, 'image', ['1', '2', '3'], 'jpg', 4)
             'image.####.jpg'
-            >>> SequenceFileUtil.construct_sequence_file_path(FormatStyle.HASH_WITH_RANGE, 'image', ['1', '2', '3'], 'jpg', 4)
+            >>> SequenceFileUtil.construct_sequence_file_path(SequenceFormat.HASH_WITH_RANGE, 'image', ['1', '2', '3'], 'jpg', 4)
             'image.####.jpg 1-3'
-            >>> SequenceFileUtil.construct_sequence_file_path(FormatStyle.PERCENT, 'image', ['1', '2', '3'], 'jpg', 4)
+            >>> SequenceFileUtil.construct_sequence_file_path(SequenceFormat.PERCENT, 'image', ['1', '2', '3'], 'jpg', 4)
             'image.%04d.jpg'
-            >>> SequenceFileUtil.construct_sequence_file_path(FormatStyle.BRACKETS_SEPARATE_RANGES, 'project/shot/comp_v1', ['988', '1001', '1002', '1011'], 'jpg', 4)
+            >>> SequenceFileUtil.construct_sequence_file_path(SequenceFormat.BRACKETS_SEPARATE_RANGES, 'project/shot/comp_v1', ['988', '1001', '1002', '1011'], 'jpg', 4)
             'project/shot/comp_v1.[0988,1001-1002,1011].jpg'
         """
         # Get the string pattern corresponding to the format style
@@ -460,7 +500,7 @@ class SequenceFileUtil(FileUtil):
             start_frame, end_frame = SequenceFileUtil.get_sequence_range(frame_numbers)
 
         # Handle specific format styles that require pre-processing of the string.
-        if format_style in (FormatStyle.HASH, FormatStyle.HASH_WITH_RANGE):
+        if format_style in (SequenceFormat.HASH, SequenceFormat.HASH_WITH_RANGE):
             range_str = '#' * padding
         elif format_style.requires_separate_ranges():
             ranges = SequenceFileUtil.get_sequence_ranges(frame_numbers, padding)
@@ -507,19 +547,19 @@ class SequenceFileUtil(FileUtil):
         return [f"{base_name}.{frame:0{padding}}.{extension}" for frame in frames]
 
     @staticmethod
-    def generate_frame_path(sequence_path_format: str, frame: int, format_style: Optional['FormatStyle'] = None) -> str:
+    def generate_frame_path(sequence_path_format: str, frame: int, format_style: Optional['SequenceFormat'] = None) -> str:
         """Generate the file path for a specific frame number based on the given sequence path format and format style.
 
         Args:
             sequence_path_format (str): The sequence path format.
             frame (int): The frame number to generate the path for.
-            format_style (Optional[FormatStyle]): The format style to use, if not provided, it will be detected.
+            format_style (Optional[SequenceFormat]): The format style to use, if not provided, it will be detected.
 
         Returns:
             str: The generated file path for the specified frame.
         """
         # Detect the format style if not provided
-        format_style = format_style or FormatStyle.from_path(sequence_path_format)
+        format_style = format_style or SequenceFormat.from_path(sequence_path_format)
         if not format_style:
             raise ValueError("Unsupported format style")
 
@@ -537,19 +577,19 @@ class SequenceFileUtil(FileUtil):
         return f"{base_name}.{frame:0{padding}}.{extension}"
 
     @staticmethod
-    def extract_paths_from_format(sequence_path_format: str, sequence_range: Optional[Tuple[int, int]] = None, format_style: Optional['FormatStyle'] = None) -> List[str]:
+    def extract_paths_from_format(sequence_path_format: str, sequence_range: Optional[Tuple[int, int]] = None, format_style: Optional['SequenceFormat'] = None) -> List[str]:
         """Extract individual file paths from a sequence path format.
 
         Args:
             sequence_path_format (str): The sequence path format.
             sequence_range (Optional[Tuple[int, int]]): An optional range of sequence numbers (start, end).
-            format_style (Optional[FormatStyle]): The format style to use, if not provided, it will be detected.
+            format_style (Optional[SequenceFormat]): The format style to use, if not provided, it will be detected.
 
         Returns:
             List[str]: A list of individual file paths.
         """
         # Detect the format style if not provided
-        format_style = format_style or FormatStyle.from_path(sequence_path_format)
+        format_style = format_style or SequenceFormat.from_path(sequence_path_format)
         if not format_style:
             raise ValueError("Unsupported format style")
 
@@ -584,9 +624,9 @@ class SequenceFileUtil(FileUtil):
             # Otherwise, determine the sequence range from the files on disk
             else:
                 # Replace format placeholders with '?' for glob pattern
-                if format_style == FormatStyle.HASH:
+                if format_style == SequenceFormat.HASH:
                     pattern = sequence_path_format.replace('#', '?')
-                elif format_style == FormatStyle.PERCENT:
+                elif format_style == SequenceFormat.PERCENT:
                     pattern = sequence_path_format.replace(f'%0{padding}d', '?' * padding)
                 else:
                     raise ValueError("Sequence range must be provided for this format style")
@@ -702,14 +742,14 @@ class SequenceFileUtil(FileUtil):
         return sequence_numbers
 
     @staticmethod
-    def convert_to_sequence_format(file_paths: Iterable[str], format_style: 'FormatStyle' = FormatStyle.HASH,
+    def convert_to_sequence_format(file_paths: Iterable[str], format_style: 'SequenceFormat' = SequenceFormat.HASH,
                                    use_unique_padding: bool = True, is_skip_hidden: bool = True
                                   ) -> Generator[str, None, None]:
         """Convert a list of file paths to a list with sequence path formats.
 
         Args:
             file_paths (Iterable[str]): An iterable of file paths.
-            format_style (FormatStyle): The format style to use for padding.
+            format_style (SequenceFormat): The format style to use for padding.
             use_unique_padding (bool): Whether to include distinct formats for each sequence length.
             is_skip_hidden (bool): Whether to skip hidden files.
 
@@ -735,19 +775,19 @@ class SequenceFileUtil(FileUtil):
             >>> sorted(SequenceFileUtil.convert_to_sequence_format(file_paths, use_unique_padding=False))
             ['project/shot/comp_v1.######.exr', 'project/shot/comp_v1.####.jpg', 'project/shot/comp_v2.1005.jpg', 'project/shot/notes.txt', 'project/shot/reference_image.png']
 
-            >>> sorted(SequenceFileUtil.convert_to_sequence_format(file_paths, format_style=FormatStyle.PERCENT))
+            >>> sorted(SequenceFileUtil.convert_to_sequence_format(file_paths, format_style=SequenceFormat.PERCENT))
             ['project/shot/comp_v1.%04d.exr', 'project/shot/comp_v1.%04d.jpg', 'project/shot/comp_v1.%06d.exr', 'project/shot/comp_v2.1005.jpg', 'project/shot/notes.txt', 'project/shot/reference_image.png']
 
-            >>> sorted(SequenceFileUtil.convert_to_sequence_format(file_paths, format_style=FormatStyle.BRACKETS))
+            >>> sorted(SequenceFileUtil.convert_to_sequence_format(file_paths, format_style=SequenceFormat.BRACKETS))
             ['project/shot/comp_v1.[001001-001012].exr', 'project/shot/comp_v1.[1001-1002].exr', 'project/shot/comp_v1.[1001-1002].jpg', 'project/shot/comp_v2.1005.jpg', 'project/shot/notes.txt', 'project/shot/reference_image.png']
 
-            >>> sorted(SequenceFileUtil.convert_to_sequence_format(file_paths, format_style=FormatStyle.BRACES))
+            >>> sorted(SequenceFileUtil.convert_to_sequence_format(file_paths, format_style=SequenceFormat.BRACES))
             ['project/shot/comp_v1.{001001..001012}.exr', 'project/shot/comp_v1.{1001..1002}.exr', 'project/shot/comp_v1.{1001..1002}.jpg', 'project/shot/comp_v2.1005.jpg', 'project/shot/notes.txt', 'project/shot/reference_image.png']
 
-            >>> sorted(SequenceFileUtil.convert_to_sequence_format(file_paths, format_style=FormatStyle.BRACKETS_SEPARATE_RANGES))
+            >>> sorted(SequenceFileUtil.convert_to_sequence_format(file_paths, format_style=SequenceFormat.BRACKETS_SEPARATE_RANGES))
             ['project/shot/comp_v1.[001001,001011-001012].exr', 'project/shot/comp_v1.[1001-1002].exr', 'project/shot/comp_v1.[1001-1002].jpg', 'project/shot/comp_v2.1005.jpg', 'project/shot/notes.txt', 'project/shot/reference_image.png']
 
-            >>> sorted(SequenceFileUtil.convert_to_sequence_format(file_paths, format_style=FormatStyle.BRACKETS_SEPARATE_RANGES, use_unique_padding=False))
+            >>> sorted(SequenceFileUtil.convert_to_sequence_format(file_paths, format_style=SequenceFormat.BRACKETS_SEPARATE_RANGES, use_unique_padding=False))
             ['project/shot/comp_v1.[001001-001002,001011-001012].exr', 'project/shot/comp_v1.[1001-1002].jpg', 'project/shot/comp_v2.1005.jpg', 'project/shot/notes.txt', 'project/shot/reference_image.png']
         """
         # Initialize dictionary to store sequences and results
@@ -852,7 +892,7 @@ class SequenceFileUtil(FileUtil):
                 - sequence_range: The range of sequence numbers if the file is part of a sequence, as a string in the format 'start-end'.
         """
         # Detect the format style of the sequence file path
-        format_style = FormatStyle.from_path(file_path)
+        format_style = SequenceFormat.from_path(file_path)
         # If the format style is not detected, handle it as a regular file and extract info
         if not format_style:
             return FileUtil.extract_file_info(file_path)
@@ -899,6 +939,60 @@ class SequenceFileUtil(FileUtil):
             "sequence_count": len(sequence_numbers),
         }
         return details
+
+    @classmethod
+    def parse_sequence_path(cls, sequence_path_format: str, *, scan_disk: bool = True) -> 'SequencePath':
+        """Parse *sequence_path_format* and return a :class:`SequencePath`.
+
+        Args:
+            sequence_path_format: A path-format string, e.g.  
+                ``'proj/shot/comp_v1.####.exr 1001-1012'`` or  
+                ``'proj/shot/comp_v1.%04d.exr'``.
+            scan_disk: If *True* and the format does **not** encode a range,
+                glob the filesystem to infer the min/max frame numbers.
+
+        Returns:
+            SequencePath: Immutable interface object with attributes  
+                ``raw, format_style, base_name, extension, padding, frame_range``.
+        """
+        # 1) Detect the format style
+        fmt = SequenceFormat.from_path(sequence_path_format)
+        if fmt is None:
+            raise ValueError(f'Unsupported sequence style: {sequence_path_format!r}')
+
+        # 2) Extract regex groups and padding
+        details: Dict[str, str] = cls.extract_sequence_details(sequence_path_format, fmt)
+        padding: int = cls.get_padding(details, fmt)
+
+        # 3) Resolve frame_range if available (or requested via scan_disk)
+        frame_range: Optional[Tuple[int, int]] = None
+        if fmt.requires_range():
+            frame_range = (int(details["start_frame"]), int(details["end_frame"]))
+        elif fmt.requires_separate_ranges():
+            nums = cls.ranges_to_sequence_numbers(details["ranges"].split(","))
+            if nums:
+                frame_range = (nums[0], nums[-1])
+        elif scan_disk:
+            try:
+                paths = cls.extract_paths_from_format(sequence_path_format, format_style=fmt)
+                nums  = [
+                    int(cls.extract_frame_number(p)) for p in paths
+                    if cls.extract_frame_number(p)
+                ]
+                if nums:
+                    frame_range = (min(nums), max(nums))
+            except OSError:
+                pass  # ignore unreadable directories
+
+        # 4) Create and return the lightweight interface object
+        return SequencePath(
+            raw=sequence_path_format,
+            format_style=fmt,
+            base_name=details["base_name"],
+            extension=details["extension"],
+            padding=padding,
+            frame_range=frame_range,
+        )
 
 
 class FilePathWalker:
