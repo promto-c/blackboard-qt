@@ -351,7 +351,7 @@ class ImageSequence:
     def __init_attributes(self):
         """Initialize the attributes.
         """
-        self.path_sequence = SequencePath.from_path(self.input_path)
+        self.path_sequence = SequencePath(self.input_path)
 
     @LRUCache()
     def read_image(self, file_path: str):
@@ -360,7 +360,7 @@ class ImageSequence:
     def get_image_data(self, frame: 'Number'):
         file_path = self.get_frame_path(frame)
         return self.read_image(file_path)
-    
+
     # From Path Sequence
     # ------------------
     @property
