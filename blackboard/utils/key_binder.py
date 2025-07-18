@@ -18,7 +18,7 @@ class Shortcut(QtWidgets.QShortcut):
     _shortcuts: DefaultDict[str, Set[Tuple[QtWidgets.QWidget, Callable]]] = defaultdict(set)
 
     def __init__(self, key_sequence: QtGui.QKeySequence, parent_widget: QtWidgets.QWidget, callback: Callable,
-                 context: QtCore.Qt.ShortcutContext = QtCore.Qt.ShortcutContext.WindowShortcut):
+                 context: QtCore.Qt.ShortcutContext = QtCore.Qt.ShortcutContext.WidgetWithChildrenShortcut):
         # NOTE: ambiguousMember, to handle when multiple widgets binding on same key (when used with ScalableView)
         try:
             super().__init__(key_sequence, parent_widget, self.activate, self.activate, QtCore.Qt.ShortcutContext.WindowShortcut)
@@ -37,16 +37,22 @@ class Shortcut(QtWidgets.QShortcut):
     #       because it will get only ScalableView that wrapped all inside widgets
     def activate(self):
         for widget, callback, context in Shortcut._shortcuts[self.key_sequence_str]:
-            if (
-                context == QtCore.Qt.ShortcutContext.WidgetWithChildrenShortcut and
-                widget.focusWidget() and
-                widget.isAncestorOf(QtWidgets.QApplication.instance().focusWidget())
-            ):
+            if widget.hasFocus():
                 callback()
                 break
-            elif widget.hasFocus():
-                callback()
-                break
+
+            if context == QtCore.Qt.ShortcutContext.WidgetWithChildrenShortcut and widget.focusWidget():
+                top_level_focus_widget = QtWidgets.QApplication.instance().focusWidget()
+                if widget.isAncestorOf(top_level_focus_widget):
+                    callback()
+                    break
+                # NOTE: Check if the top-level focus widget is a QGraphicsView with a widget
+                if isinstance(top_level_focus_widget, QtWidgets.QGraphicsView) and hasattr(top_level_focus_widget, 'widget'):
+                    while widget.parent():
+                        widget = widget.parent()
+                        if widget == top_level_focus_widget.widget:
+                            callback()
+                            break
 
 
 class KeyBinder(QtWidgets.QWidget):
@@ -55,7 +61,7 @@ class KeyBinder(QtWidgets.QWidget):
 
     @classmethod
     def bind_key(cls, key_sequence: Union[str, QtGui.QKeySequence], parent_widget: QtWidgets.QWidget, callback: Callable, 
-                 context: QtCore.Qt.ShortcutContext = QtCore.Qt.ShortcutContext.WidgetShortcut) -> Shortcut:
+                 context: QtCore.Qt.ShortcutContext = QtCore.Qt.ShortcutContext.WidgetWithChildrenShortcut) -> Shortcut:
         """Bind a given key sequence to a function.
 
         Args:

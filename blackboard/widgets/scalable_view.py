@@ -95,7 +95,7 @@ class ScalableView(QtWidgets.QGraphicsView):
         # Key Binds
         # ---------
         # Create a QShortcut for the F key to reset the scaling of the view.
-        KeyBinder.bind_key('F', self, self.set_scale, QtCore.Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        KeyBinder.bind_key('F', self, self.set_scale)
 
     # Utility Methods
     # ---------------
