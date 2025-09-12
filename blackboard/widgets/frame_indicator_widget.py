@@ -2,7 +2,7 @@
 # ------------------------
 from enum import Enum
 
-# Third Party Imports
+# Third-Party Imports
 # -------------------
 from qtpy import QtCore, QtGui, QtWidgets
 
@@ -10,6 +10,9 @@ from qtpy import QtCore, QtGui, QtWidgets
 # Class Definitions
 # -----------------
 class FrameStatus(Enum):
+    """Cache-status flag per frame.
+    """
+
     DEFAULT = 'default'
     CACHING = 'caching'
     CACHED = 'cached'
@@ -34,9 +37,9 @@ class FrameIndicatorBar(QtWidgets.QWidget):
         """Initialize the frame indicator bar with a specified range of frames.
 
         Args:
-            first_frame: An integer specifying the first frame number.
-            last_frame: An integer specifying the last frame number.
-            parent: The parent widget. Defaults to None.
+            first_frame: Index of the first frame.
+            last_frame: Index of the last frame.
+            parent: Parent widget.
         """
         super().__init__(parent, *args, **kwargs)
         self.first_frame = first_frame
@@ -49,11 +52,11 @@ class FrameIndicatorBar(QtWidgets.QWidget):
     # Public Methods
     # --------------
     def set_frame_range(self, first_frame: int, last_frame: int):
-        """Set the range of frames in the bar.
+        """Reset the bar to a new absolute range.
 
         Args:
-            first_frame: An integer specifying the first frame number.
-            last_frame: An integer specifying the last frame number.
+            first_frame: Index of the first frame.
+            last_frame: Index of the last frame.
         """
         self.first_frame = first_frame
         self.last_frame = last_frame
@@ -71,9 +74,7 @@ class FrameIndicatorBar(QtWidgets.QWidget):
             status: A FrameStatus enum indicating the new status of the frame.
         """
         if self.first_frame <= frame_index <= self.last_frame:
-            relative_index = frame_index - self.first_frame
-            self.frame_status[int(relative_index)] = status
-            # Redraw the widget
+            self.frame_status[frame_index - self.first_frame] = status
             self.update()
 
     # Overridden Methods
@@ -99,12 +100,13 @@ class FrameIndicatorBar(QtWidgets.QWidget):
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
-        self.frame_indicator = FrameIndicatorBar(100)  # Assume 100 frames for this example
+        self.frame_indicator = FrameIndicatorBar(1001, 1022)
         self.setCentralWidget(self.frame_indicator)
 
         # Example updating frame status
         self.frame_indicator.update_frame_status(5, FrameStatus.CACHING)  # Frame 5 is caching
         self.frame_indicator.update_frame_status(6, FrameStatus.CACHED)  # Frame 6 is cached
+
 
 if __name__ == '__main__':
     app = QtWidgets.QApplication([])

@@ -1,6 +1,6 @@
 # Type Checking Imports
 # ---------------------
-from typing import List
+from typing import List, Dict
 
 # Third Party Imports
 # -------------------
@@ -32,6 +32,7 @@ class BreadcrumbWidget(QtWidgets.QWidget):
         """
         super().__init__(parent)
 
+        self._custom_widgets: Dict[int, QtWidgets.QWidget] = {}
         self._init_ui()
         self.set_paths(paths)
 
@@ -65,6 +66,32 @@ class BreadcrumbWidget(QtWidgets.QWidget):
             return
 
         self._assemble_breadcrumbs()
+
+    def set_widget(self, index: int, widget: QtWidgets.QWidget):
+        """Replace the breadcrumb at `index` with a custom widget.
+
+        If breadcrumbs are already shown, this will remove the old item
+        and insert your widget in its place. The custom widget is also
+        remembered so that calling `set_paths` again will reapply it.
+
+        Args:
+            index (int): The breadcrumb level to replace (0-based).
+            widget (QtWidgets.QWidget): The widget to insert at that level.
+        """
+        # remember for rebuilds
+        self._custom_widgets[index] = widget
+
+        layout = self.layout()
+        # layout items: [btn0, sep, btn1, sep, btn2, ...]
+        pos = index * 2
+        # remove old
+        old_item = layout.takeAt(pos)
+        if old_item is not None:
+            old_w = old_item.widget()
+            if old_w:
+                old_w.deleteLater()
+        # insert new
+        layout.insertWidget(pos, widget)
 
     # Class Properties
     # ----------------
@@ -118,6 +145,9 @@ if __name__ == '__main__':
 
     # Set up the layout and add the BreadcrumbWidget.
     breadcrumb = BreadcrumbWidget(paths=path)
+    combo = QtWidgets.QComboBox()
+    combo.addItems(["v1", "v2", "v3"])
+    breadcrumb.set_widget(1, combo)
     breadcrumb.clicked.connect(lambda index: print(f"Clicked on: {breadcrumb.paths[index]}"))
 
     breadcrumb.show()
