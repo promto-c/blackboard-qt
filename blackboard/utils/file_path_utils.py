@@ -127,7 +127,7 @@ class SequencePath:
 
         # 3) formats with separate ranges (e.g. “[1-3,5,7-8]”)
         if self._format.requires_separate_ranges():
-            # re‑parse the “ranges” token from the raw string
+            # re-parse the “ranges” token from the raw string
             details = SequenceFileUtil.extract_sequence_details(self._raw, self._format)
             parts = details["ranges"].split(",")
             return SequenceFileUtil.ranges_to_sequence_numbers(parts)
