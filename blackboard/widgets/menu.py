@@ -1,10 +1,14 @@
 # Type Checking Imports
 # ---------------------
-from typing import Any, Optional
+from typing import Any, Optional, overload, Union
 
 # Third Party Imports
 # -------------------
 from qtpy import QtWidgets, QtCore, QtGui
+
+# Local Imports
+# -------------
+from blackboard.widgets.button import TearOffWidgetAction
 
 
 # Class Definitions
@@ -90,7 +94,7 @@ class SectionAction(QtWidgets.QWidgetAction):
 
         return action
 
-    def addMenu(self, title: str, **kwargs) -> QtWidgets.QMenu:
+    def addMenu(self, title: str, **kwargs) -> 'ContextMenu':
         """Insert a submenu into the parent menu before the separator.
 
         Args:
@@ -172,6 +176,55 @@ class ContextMenu(QtWidgets.QMenu):
             self.insertAction(actions[index + 1], action_to_insert)
         else:
             self.addAction(action_to_insert)
+
+    # Overloaded signatures for improved type checking
+    @overload
+    def addAction(
+        self,
+        text: str,
+    ) -> 'QtWidgets.QWidgetAction': ...
+
+    @overload
+    def addAction(
+        self,
+        action: 'QtWidgets.QWidgetAction',
+    ) -> QtWidgets.QWidgetAction: ...
+
+    def addAction(
+        self,
+        action_or_text: Union[QtWidgets.QAction, str],
+        icon: Optional[QtGui.QIcon] = None,
+        detachable: bool = False,
+        auto_restore: bool = False,
+        *arg, **kwargs
+    ) -> QtWidgets.QAction:
+        """Add an action or text-based action to the menu, optionally making it detachable.
+
+        If detachable is True and the action is a QWidgetAction, wraps the action's
+        default widget alongside a TearOffButton in a container QWidgetAction.
+
+        Args:
+            action_or_text (QtWidgets.QAction | str): An existing QAction or the text for a new action.
+            icon (QtGui.QIcon): Optional icon when creating a new action.
+            detachable (bool): Enable tear-off support for QWidgetAction.
+
+        Returns:
+            The added QAction (or QWidgetAction if detachable).
+        """
+        # Determine or create the action
+        if isinstance(action_or_text, QtWidgets.QAction):
+            action = action_or_text
+        else:
+            action = QtWidgets.QAction(icon=icon, text=action_or_text, parent=self, *arg, **kwargs)
+
+        # If detachable requested and it's a QWidgetAction, wrap it
+        if detachable and isinstance(action, QtWidgets.QWidgetAction):
+            tear_off_widget_action = TearOffWidgetAction(action, menu=self, auto_restore=auto_restore)
+            super().addAction(tear_off_widget_action)
+
+        super().addAction(action)
+
+        return action
 
 
 class ResizableMenu(ContextMenu):

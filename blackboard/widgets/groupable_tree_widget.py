@@ -28,7 +28,7 @@ from blackboard.widgets.button import TearOffWidgetAction
 from blackboard.widgets.tag_widget import TagListView
 from blackboard.widgets.scalable_view import ScalableView
 from blackboard.widgets.item_delegate import AdaptiveColorMappingDelegate, HighlightItemDelegate, ThumbnailDelegate
-from blackboard.widgets.draggable_list_widget import DraggableListWidget
+from blackboard.widgets.draggable_list_widget import DraggableListWidget, DraggableItem
 
 
 # Class Definitions
@@ -210,127 +210,57 @@ class TreeWidgetItem(QtWidgets.QTreeWidgetItem):
         """
         return hash(self.id)
 
-class ColumnManagementWidget(QtWidgets.QTreeWidget):
+class ColumnManagementWidget(DraggableListWidget):
+    """Manage the order and visibility of tree columns with checkable drag items.
+    """
 
     # Initialization and Setup
     # ------------------------
     def __init__(self, tree_widget: 'GroupableTreeWidget'):
-        super().__init__(tree_widget)
-
-        # Store the arguments
+        super().__init__(orientation=QtCore.Qt.Orientation.Vertical,
+                         spacing=2,
+                         container_margins=QtCore.QMargins(0, 0, 0, 0))
         self.tree_widget = tree_widget
+        self._suppress_updates = False
+
+        self.setFixedWidth(200)
 
         # Initialize setup
-        self.__init_ui()
         self.__init_signal_connections()
-
-    def __init_ui(self):
-        """Initialize the UI of the widget.
-        """
-        self.setHeaderHidden(True)
-        self.setColumnCount(2)
-        self.setDragDropMode(QtWidgets.QAbstractItemView.DragDropMode.InternalMove)
-        self.setItemsExpandable(False)
-        self.setRootIsDecorated(False)
-
-        # Set the minimum width for the first column
-        self.header().setMinimumSectionSize(20)
-        self.setColumnWidth(0, 20)  # Adjust the size of the first column
 
     def __init_signal_connections(self):
         """Initialize signal-slot connections.
         """
-        self.tree_widget.header().sectionMoved.connect(self.update_columns)
-        self.tree_widget.model().headerDataChanged.connect(self.update_columns)
+        self.tree_widget.field_changed.connect(self.update_columns)
+        self.tree_widget.field_visibility_changed.connect(self._refresh_check_states)
 
-        self.itemClicked.connect(self.toggle_check_state)
-        self.itemChanged.connect(self.set_column_visibility)
+        self.itemMoved.connect(self._reorder_column)
+        self.itemCheckStateChanged.connect(self.set_column_visibility)
 
-    def toggle_check_state(self, tree_item: QtWidgets.QTreeWidgetItem, column: int):
-        """Toggle the checkbox state when an item's text (second column) is clicked.
-        """
-        if column != 1:
-            return
-
-        current_state = tree_item.checkState(0)
-        new_state = QtCore.Qt.CheckState.Checked if current_state == QtCore.Qt.CheckState.Unchecked else QtCore.Qt.CheckState.Unchecked
-        tree_item.setCheckState(0, new_state)  # Toggle the check state
-
-    def sync_column_order(self):
-        """Synchronize the column order.
-        """
-        for i in range(self.topLevelItemCount()):
-            column_name = self.topLevelItem(i).text(1)
-            visual_index = self.tree_widget.get_column_visual_index(column_name)
-            self.tree_widget.header().moveSection(visual_index, i)
-
-    def set_column_visibility(self, item: QtWidgets.QTreeWidgetItem, column: int):
+    def set_column_visibility(self, item: DraggableItem, checked_state: int):
         """Set the visibility of a column based on the item's check state.
         """
-        column_name = item.text(1)
-        is_hidden = item.checkState(0) == QtCore.Qt.CheckState.Unchecked
-        column_index = self.tree_widget.get_column_index(column_name)
-        if self.tree_widget.isColumnHidden(column_index) == is_hidden:
-            return
-        self.tree_widget.setColumnHidden(column_index, is_hidden)
+        column_index = self.tree_widget.get_column_index(item.text)
+        self.tree_widget.setColumnHidden(column_index, not checked_state)
 
     def update_columns(self):
-        """Update the columns.
+        """Rebuild the list to reflect current column order and state.
         """
         self.clear()
+        self.add_items(self.tree_widget.fields, checkable=True)
+        self._refresh_check_states()
 
-        if not self.tree_widget.fields:
-            return
+    def _refresh_check_states(self):
+        for item in self.items:
+            logical_index = self.tree_widget.get_column_index(item.text)
+            is_checked = not self.tree_widget.isColumnHidden(logical_index)
+            item.checkbox.blockSignals(True)
+            item.setChecked(is_checked)
+            item.checkbox.blockSignals(False)
 
-        logical_indexes = [self.tree_widget.get_column_logical_index(i) for i in range(self.tree_widget.columnCount())]
-        header_names = [self.tree_widget.fields[i] for i in logical_indexes]
+    def _reorder_column(self, old_index: int, new_index: int, _item: DraggableItem):
+        self.tree_widget.header().moveSection(old_index, new_index)
 
-        self.addItems(header_names)
-
-    def addItem(self, label: str, is_checked: bool = False):
-        """Add an item to the tree.
-
-        Args:
-            label (str): The label for the tree item.
-            is_checked (bool): Whether the item should be checked by default.
-        """
-        # Create a new tree widget item with an empty first column and the specified label
-        tree_item = QtWidgets.QTreeWidgetItem(self, ['', label])
-        # Convert boolean is_checked to Qt.CheckState, then set the tree item's check state
-        check_state = QtCore.Qt.CheckState.Checked if is_checked else QtCore.Qt.CheckState.Unchecked
-        tree_item.setCheckState(0, check_state)
-
-    def addItems(self, labels: Iterable[str]):
-        """Add multiple items to the tree.
-        """
-        for column_visual_index, label in enumerate(labels):
-            column_logical_index = self.tree_widget.get_column_logical_index(column_visual_index)
-            is_checked = not self.tree_widget.isColumnHidden(column_logical_index)
-            self.addItem(label, is_checked)
-
-    def dropEvent(self, event: QtGui.QDropEvent):
-        """Handle the drop event.
-        """
-        # Attempt to find the item at the drop position.
-        target_item = self.itemAt(event.pos())
-
-        if self.dropIndicatorPosition() == QtWidgets.QAbstractItemView.DropIndicatorPosition.OnItem:
-
-            new_row_index = self.indexFromItem(target_item).row()
-
-            # Perform the move operation within the same level.
-            for selected_item in self.selectedItems():
-                # Take the item out of its current position.
-                taken_item = self.takeTopLevelItem(self.indexOfTopLevelItem(selected_item))
-                # Insert it at the determined position.
-                self.insertTopLevelItem(new_row_index, taken_item)
-            
-            event.ignore()
-        else:
-            # If not reparenting, use the default behavior which is already correct for same-level moves.
-            super().dropEvent(event)
-
-        self.sync_column_order()
 
 class TreeUtilityToolBar(QtWidgets.QToolBar):
 
@@ -386,11 +316,6 @@ class TreeUtilityToolBar(QtWidgets.QToolBar):
             tooltip="Toggle word wrap",
             checkable=True,
         )
-        # self.set_uniform_row_height_action = self.add_action(
-        #     icon=self.tabler_icon.arrow_autofit_height,
-        #     tooltip="Toggle uniform row height",
-        #     checkable=True,
-        # )
 
         self.uniform_row_height_slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal, self)
         self.uniform_row_height_slider.setRange(16, 200)
@@ -422,7 +347,6 @@ class TreeUtilityToolBar(QtWidgets.QToolBar):
         # Connect signals to slots
         self.fit_in_view_action.triggered.connect(self.tree_widget.fit_column_in_view)
         self.word_wrap_action.toggled.connect(self.tree_widget.setWordWrap)
-        # self.set_uniform_row_height_action.triggered.connect(self.toggle_uniform_row_height)
         self.uniform_row_height_slider.valueChanged.connect(self.tree_widget.set_row_height)
         self.reload_action.triggered.connect(self.tree_widget.reload_requested.emit)
 

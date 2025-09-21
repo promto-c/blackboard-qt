@@ -187,6 +187,7 @@ class DraggableItem(QtWidgets.QFrame):
         # Store the arguments
         self._text = text
         self._checkable = checkable
+        self._check_state_connection = None
 
         # Initialize setup
         self.__init_ui()
@@ -304,9 +305,10 @@ class DraggableListWidget(MomentumScrollArea):
     """
 
     # Signals
-    itemMoved = QtCore.Signal(int, int, QtWidgets.QWidget)
-    itemAdded = QtCore.Signal(QtWidgets.QWidget)
-    itemRemoved = QtCore.Signal(QtWidgets.QWidget)
+    itemMoved = QtCore.Signal(int, int, DraggableItem)
+    itemAdded = QtCore.Signal(DraggableItem)
+    itemRemoved = QtCore.Signal(DraggableItem)
+    itemCheckStateChanged = QtCore.Signal(DraggableItem, bool)
 
     # Initialization and Setup
     # ------------------------
@@ -381,6 +383,7 @@ class DraggableListWidget(MomentumScrollArea):
         idx = len(self.items) - 1
         self._position_item(item, idx, animate=False)
         self._update_container_size()
+        self._connect_item_signals(item)
         item.show()
         self.itemAdded.emit(item)
 
@@ -413,6 +416,30 @@ class DraggableListWidget(MomentumScrollArea):
         self.container.setUpdatesEnabled(True)
 
         return new_items
+
+    def _connect_item_signals(self, item: DraggableItem):
+        """Connect per-item signals so consumers can respond to checkbox toggles."""
+        if not item._checkable:
+            return
+
+        checkbox = item.checkbox
+        slot = item._check_state_connection
+        if slot is not None:
+            try:
+                checkbox.stateChanged.disconnect(slot)
+            except (TypeError, RuntimeError):
+                pass
+
+        def _slot(state: int, _item=item):
+            self._handle_item_checkbox_state_changed(_item, state)
+
+        item._check_state_connection = _slot
+        checkbox.stateChanged.connect(_slot)
+
+    def _handle_item_checkbox_state_changed(self, item: DraggableItem, state: int):
+        """Normalize checkbox state and emit a higher-level signal."""
+        is_checked = QtCore.Qt.CheckState(state) == QtCore.Qt.CheckState.Checked
+        self.itemCheckStateChanged.emit(item, is_checked)
 
     def _update_container_size(self):
         """
@@ -494,7 +521,7 @@ class DraggableListWidget(MomentumScrollArea):
             self._relayout_items()
         self.itemRemoved.emit(item)
 
-    def clear_items(self):
+    def clear(self):
         """Removes all items from the list."""
         for item in self.items.copy():
             self.remove_item(item, relayout=False)
@@ -765,8 +792,7 @@ if __name__ == "__main__":
     # Create a main window with a vertical layout to hold the draggable list and control buttons.
     main_window = QtWidgets.QWidget()
     
-    search_field = QtWidgets.QLineEdit()
-    search_field.setPlaceholderText("Type to filter items...")
+    search_field = QtWidgets.QLineEdit(placeholderText="Type to filter items...")
 
     draggable_list_widget = DraggableListWidget(
         orientation=QtCore.Qt.Orientation.Vertical,
@@ -818,7 +844,7 @@ if __name__ == "__main__":
 
     # Create a separate button to clear all items from the list.
     clear_button = QtWidgets.QPushButton("Clear List")
-    clear_button.clicked.connect(draggable_list_widget.clear_items)
+    clear_button.clicked.connect(draggable_list_widget.clear)
 
     main_layout = QtWidgets.QVBoxLayout(main_window)
     main_layout.addWidget(search_field)
