@@ -761,7 +761,7 @@ class DBWidget(QtWidgets.QWidget):
         data_view_layout.addWidget(self.data_view)
 
     def open_database(self):
-        db_name, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Open Database", "", "SQLite Database Files (*.db *.sqlite)")
+        db_name, _ = QtWidgets.QFileDialog.getOpenFileName(None,"Open Database", "", "SQLite Database Files (*.db *.sqlite)")
         if not db_name:
             return
 
@@ -770,7 +770,7 @@ class DBWidget(QtWidgets.QWidget):
         self.load_table_and_view_names()
 
     def create_database(self):
-        db_name, _ = QtWidgets.QFileDialog.getSaveFileName(self, "Create Database", "", "SQLite Database Files (*.db *.sqlite)")
+        db_name, _ = QtWidgets.QFileDialog.getSaveFileName(None, "Create Database", "", "SQLite Database Files (*.db *.sqlite)")
         if not db_name:
             return
 

@@ -215,7 +215,10 @@ class ContextMenu(QtWidgets.QMenu):
         if isinstance(action_or_text, QtWidgets.QAction):
             action = action_or_text
         else:
-            action = QtWidgets.QAction(icon=icon, text=action_or_text, parent=self, *arg, **kwargs)
+            if icon is None:
+                action = QtWidgets.QAction(text=action_or_text, parent=self, *arg, **kwargs)
+            else:
+                action = QtWidgets.QAction(icon=icon, text=action_or_text, parent=self, *arg, **kwargs)
 
         # If detachable requested and it's a QWidgetAction, wrap it
         if detachable and isinstance(action, QtWidgets.QWidgetAction):

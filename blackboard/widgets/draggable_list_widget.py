@@ -343,6 +343,9 @@ class DraggableListWidget(MomentumScrollArea):
         self.item_width = 100
         # Flag to disable drag operations during filtering.
         self._drag_enabled = True
+        # Size hint guards keep embedded uses (e.g. menus) comfortably sized by default.
+        self._size_hint_min_items = 4 if self.orientation == QtCore.Qt.Orientation.Vertical else 1
+        self._size_hint_max_items: Optional[int] = 10 if self.orientation == QtCore.Qt.Orientation.Vertical else None
 
     def __init_ui(self):
         """Initialize the UI of the widget.
@@ -709,6 +712,36 @@ class DraggableListWidget(MomentumScrollArea):
         # Resize container to fit all items.
         self._update_container_size()
 
+    def _axis_span_for_items(self, item_count: int) -> int:
+        """Return the length along the primary axis required for ``item_count`` items."""
+        item_count = max(item_count, 0)
+        spacing_span = max(item_count - 1, 0) * self.spacing
+        if self.orientation == QtCore.Qt.Orientation.Vertical:
+            margin_span = self.container_margins.top() + self.container_margins.bottom()
+            item_span = item_count * self.item_height
+        else:
+            margin_span = self.container_margins.left() + self.container_margins.right()
+            item_span = item_count * self.item_width
+        return margin_span + item_span + spacing_span
+
+    def _effective_items_for_hint(self) -> int:
+        visible_count = len(self.get_visible_items())
+        min_items = max(self._size_hint_min_items, 0) if self._size_hint_min_items is not None else 0
+        count = max(visible_count, min_items)
+        if self._size_hint_max_items is not None:
+            count = min(count, max(self._size_hint_max_items, min_items))
+        return count
+
+    def _apply_size_hint(self, base_size: QtCore.QSize) -> QtCore.QSize:
+        """Combine the base size with our content-aware hint."""
+        size = QtCore.QSize(max(base_size.width(), 0), max(base_size.height(), 0))
+        axis_span = self._axis_span_for_items(self._effective_items_for_hint())
+        if self.orientation == QtCore.Qt.Orientation.Vertical:
+            size.setHeight(max(size.height(), axis_span))
+        else:
+            size.setWidth(max(size.width(), axis_span))
+        return size
+
     def _animate_reposition_except(self, exclude_widget: QtWidgets.QWidget, old_index: int, new_index: int):
         """Animates items to their new positions, except for the dragged widget.
 
@@ -749,6 +782,9 @@ class DraggableListWidget(MomentumScrollArea):
 
     # Overridden Methods
     # ------------------
+    def sizeHint(self) -> QtCore.QSize:
+        return self._apply_size_hint(super().sizeHint())
+
     def eventFilter(self, obj: QtCore.QObject, event: QtCore.QEvent) -> bool:
         """Intercepts events on the container for drag logic and resizing.
 
