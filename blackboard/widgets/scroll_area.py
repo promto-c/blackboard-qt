@@ -63,10 +63,10 @@ class FadingOverlay(QtWidgets.QWidget):
         hbar = self._scroll_area.horizontalScrollBar()
 
         # Determine if more content exists in any direction.
-        has_more_up   = (vbar.value() > vbar.minimum())
-        has_more_down = (vbar.value() < vbar.maximum())
-        has_more_left  = (hbar.value() > hbar.minimum())
-        has_more_right = (hbar.value() < hbar.maximum())
+        has_more_up   = vbar.value() > vbar.minimum()
+        has_more_down = vbar.value() < vbar.maximum()
+        has_more_left  = hbar.value() > hbar.minimum()
+        has_more_right = hbar.value() < hbar.maximum()
 
         # Use the parent's background color.
         bg_color = self.parent().palette().color(self.parent().backgroundRole())
@@ -129,9 +129,12 @@ class EdgeAwareScrollArea(MomentumScrollArea):
             orientation (QtCore.Qt.Orientation, optional): The scroll orientation.
                 Defaults to horizontal.
         """
-        super().__init__(parent)
-        if widgetResizable:
-            self.setWidgetResizable(widgetResizable)
+        super().__init__(
+            parent,
+            horizontalScrollBarPolicy=QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff,
+            verticalScrollBarPolicy=QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff,
+            widgetResizable=widgetResizable,
+        )
 
         # Store the arguments
         self.orientation = orientation
@@ -152,10 +155,6 @@ class EdgeAwareScrollArea(MomentumScrollArea):
     def __init_ui(self):
         """Initialize the UI of the widget.
         """
-        # Hide native scroll bars.
-        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-
         # Create an internal container with a layout based on orientation.
         self.container = QtWidgets.QWidget()
         if self.orientation == QtCore.Qt.Orientation.Horizontal:
@@ -273,14 +272,15 @@ class EdgeAwareScrollArea(MomentumScrollArea):
                 Defaults to True.
         """
         index = self.container_layout.indexOf(widget)
-        if index != -1:
-            # Remove the widget from the layout.
-            self.container_layout.removeWidget(widget)
-            # Uninstall the event filter.
-            widget.removeEventFilter(self)
+        if index == -1:
+            return
 
-            if adjust_size:
-                self.container.adjustSize()
+        # Remove widget from layout and uninstall event filter
+        self.container_layout.removeWidget(widget)
+        widget.removeEventFilter(self)
+
+        if adjust_size:
+            self.container.adjustSize()
 
     def eventFilter(self, obj, event):
         """Filter events to trigger auto-scroll based on mouse movement.

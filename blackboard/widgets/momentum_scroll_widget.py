@@ -131,7 +131,12 @@ class MomentumScrollArea(MomentumScrollMixin, QtWidgets.QScrollArea):
     """A QScrollArea with momentum scrolling functionality.
     """
 
-    def __init__(self, parent: QtWidgets.QWidget = None, *args, **kwargs):
+    def __init__(self,
+            parent: QtWidgets.QWidget = None,
+            horizontalScrollBarPolicy: QtCore.Qt.ScrollBarPolicy = QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded,
+            verticalScrollBarPolicy: QtCore.Qt.ScrollBarPolicy = QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded,
+            *args, **kwargs
+        ):
         """Initialize the widget with momentum scrolling functionality.
 
         Args:
@@ -139,8 +144,8 @@ class MomentumScrollArea(MomentumScrollMixin, QtWidgets.QScrollArea):
         """
         super().__init__(
             parent,
-            horizontalScrollBarPolicy=QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded,
-            verticalScrollBarPolicy=QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded,
+            horizontalScrollBarPolicy=horizontalScrollBarPolicy,
+            verticalScrollBarPolicy=verticalScrollBarPolicy,
             *args, **kwargs
         )
 

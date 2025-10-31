@@ -48,7 +48,7 @@ class FilterSelectionBar(QtWidgets.QToolBar):
             parent: The parent widget of this toolbar.
         """
         # Initialize the super class
-        super().__init__(parent)
+        super().__init__(parent, windowTitle="Filter Toolbar")
 
         # Initialize setup
         self.__init_attributes()
@@ -65,8 +65,11 @@ class FilterSelectionBar(QtWidgets.QToolBar):
     def __init_ui(self):
         """Initialize the UI of the widget.
         """
-        self.setWindowTitle("Filter Bar")
-        self._customize_toolbar_components()
+        self.qt_toolbar_ext_button: QtWidgets.QToolButton = self.findChild(QtWidgets.QToolButton, 'qt_toolbar_ext_button')
+        self.qt_toolbar_ext_button.setStyleSheet('padding: 0;')
+        self.qt_toolbar_ext_button.setFixedSize(20, 20)
+        self.qt_toolbar_ext_button.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+
         self._update_ext_icon()
 
     def __init_signal_connections(self):
@@ -177,14 +180,6 @@ class FilterSelectionBar(QtWidgets.QToolBar):
         self.clear_filters()
         self.set_filter_checked(filter_name, checked=True)
 
-    def get_filter_names(self) -> List[str]:
-        """Retrieve a list of all filter names.
-
-        Returns:
-            A list of all filter names.
-        """
-        return list(self._actions.keys())
-
     def get_filter_states(self) -> Dict[str, bool]:
         """Retrieve the state of all filters in a dictionary format.
 
@@ -193,7 +188,19 @@ class FilterSelectionBar(QtWidgets.QToolBar):
         """
         return {name: action.isChecked() for name, action in self._actions.items()}
 
-    def get_active_filters(self) -> List[str]:
+    # Class Properties
+    # ----------------
+    @property
+    def filter_names(self) -> List[str]:
+        """Retrieve a list of all filter names.
+
+        Returns:
+            A list of all filter names.
+        """
+        return list(self._actions.keys())
+
+    @property
+    def active_filters(self) -> List[str]:
         """Retrieve a list of all checked (active) filters.
 
         Returns:
@@ -201,26 +208,8 @@ class FilterSelectionBar(QtWidgets.QToolBar):
         """
         return [name for name, action in self._actions.items() if action.isChecked()]
 
-    # Class Properties
-    # ----------------
-    @property
-    def filter_names(self) -> List[str]:
-        return self.get_filter_names()
-
-    @property
-    def active_filters(self) -> List[str]:
-        return self.get_active_filters()
-
     # Private Methods
     # ---------------
-    def _customize_toolbar_components(self):
-        """Customize the toolbar components.
-        """
-        self.qt_toolbar_ext_button: QtWidgets.QToolButton = self.findChild(QtWidgets.QToolButton, 'qt_toolbar_ext_button')
-        self.qt_toolbar_ext_button.setStyleSheet('padding: 0;')
-        self.qt_toolbar_ext_button.setFixedSize(20, 20)
-        self.qt_toolbar_ext_button.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
-
     def _move_ext_button(self):
         """Move the toolbar extension button based on orientation.
         """
@@ -238,10 +227,14 @@ class FilterSelectionBar(QtWidgets.QToolBar):
             if self.qt_toolbar_ext_button.x() != new_x:
                 self.qt_toolbar_ext_button.move(new_x, self.qt_toolbar_ext_button.y())
 
-    def _update_ext_icon(self, _orientation=None):
+    def _update_ext_icon(self, orientation: QtCore.Qt.Orientation | None = None):
         """Update the icon of the toolbar extension button.
         """
-        self.qt_toolbar_ext_button.setIcon(TablerQIcon.chevron_down)
+        orientation = orientation or self.orientation()
+        if orientation == QtCore.Qt.Orientation.Vertical:
+            self.qt_toolbar_ext_button.setIcon(TablerQIcon.chevron_right)
+        else:
+            self.qt_toolbar_ext_button.setIcon(TablerQIcon.chevron_down)
 
     def _apply_filter_action(self, filter_name: str, check_state: bool):
         """Apply the filter action logic, including exclusive selection if Ctrl is pressed."""
