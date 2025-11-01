@@ -234,8 +234,8 @@ class SQLQueryBuilder:
         else:
             return f"{model_name}{sep}{field_name}"
 
-    @staticmethod
-    def propagate_hierarchies(fields: List[str], sep: str = CHAIN_SEPARATOR, prune_leaves: int = 0) -> List[str]:
+    @classmethod
+    def propagate_hierarchies(cls, fields: List[str], sep: str = CHAIN_SEPARATOR, prune_leaves: int = 0) -> List[str]:
         """Propagate and ensure all levels of hierarchy are referenced, with an option to prune levels from the leaves.
 
         Args:
@@ -277,7 +277,7 @@ class SQLQueryBuilder:
         unique_hierarchies = set()
 
         # Iterate over the flattened fields and process the hierarchical tokens.
-        for field in SQLQueryBuilder._extract_key_value_pairs(fields, keys_only=True):
+        for field in cls._flatten_pairs(fields, keys_only=True):
             tokens = field.split(sep)
 
             # Generate all prefix levels
@@ -288,8 +288,8 @@ class SQLQueryBuilder:
         # Return a lexicographically sorted list
         return sorted(unique_hierarchies)
 
-    @staticmethod
-    def build_select_clause(field_to_alias_pairs: List[str] | List[Tuple[str, str]] | Dict[str, Any] = None,
+    @classmethod
+    def build_select_clause(cls, field_to_alias_pairs: List[str] | List[Tuple[str, str]] | Dict[str, Any] = None,
                             grouped_fields: Set[str] = None) -> str:
         """Build the SELECT part of the query.
 
@@ -311,9 +311,9 @@ class SQLQueryBuilder:
             "'shot.sequence.project'.name AS 'shot.sequence.project.name',\\n\\t'shot'.name AS 'my_shot_name',\\n\\t_.status AS 'status'"
         """
         def _build(field, alias):
-            field_inner_alias = SQLQueryBuilder._build_inner_alias(field)
+            field_inner_alias = cls._build_inner_alias(field)
             if grouped_fields and field in grouped_fields:
-                field_inner_alias = f"JSON_GROUP_ARRAY({field_inner_alias})"
+                field_inner_alias = f"JSON_GROUP_ARRAY({field_inner_alias}) FILTER (WHERE {field_inner_alias} IS NOT NULL)"
 
             return f"{field_inner_alias} AS '{alias}'"
 
@@ -324,7 +324,7 @@ class SQLQueryBuilder:
         # Handle both list of tuples (field, alias)
         select_parts = [
             _build(field, alias)
-            for field, alias in SQLQueryBuilder._extract_key_value_pairs(field_to_alias_pairs)
+            for field, alias in cls._flatten_pairs(field_to_alias_pairs)
         ]
 
         return ",\n\t".join(select_parts)
@@ -373,13 +373,15 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
         # 3) Return the JOIN clauses as a single multi-line string.
         return "\n".join(join_clauses)
 
-    @staticmethod
-    def build_where_clause(base_model: str = None,
-                           conditions: Dict[Union[GroupOperator, str], Any] = None, 
-                           group_operator: Union[GroupOperator, str] = GroupOperator.AND,
-                           relationships: Optional[Dict[str, str]] = None,
-                           serializers: Optional[Dict[str, 'DataSerializer']] = None,
-                           ) -> Tuple[str, Set[str], List[Any]]:
+    @classmethod
+    def build_where_clause(
+            cls,
+            base_model: str = None,
+            conditions: Dict[Union[GroupOperator, str], Any] = None, 
+            group_operator: Union[GroupOperator, str] = GroupOperator.AND,
+            relationships: Optional[Dict[str, str]] = None,
+            serializers: Optional[Dict[str, 'DataSerializer']] = None,
+        ) -> Tuple[str, Set[str], List[Any]]:
         """Build the WHERE clause of the query.
 
         Examples:
@@ -452,10 +454,10 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
         parameters = []
         fields = set()
 
-        for key, value in SQLQueryBuilder._extract_key_value_pairs(conditions):
+        for key, value in cls._flatten_pairs(conditions):
             # Handle group operators by recursively building sub-clauses.
             if isinstance(key, GroupOperator) or GroupOperator.is_valid(key):
-                sub_where_clause, sub_fields, sub_parameters = SQLQueryBuilder.build_where_clause(
+                sub_where_clause, sub_fields, sub_parameters = cls.build_where_clause(
                     base_model, value, group_operator=key, relationships=relationships, serializers=serializers
                 )
                 where_clauses.append(f"({sub_where_clause})")
@@ -484,11 +486,11 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
                 sql_operator = operator.sql_operator
 
             fields.add(key)
-            where_clause = f"{SQLQueryBuilder._build_inner_alias(key)} {sql_operator}"
+            where_clause = f"{cls._build_inner_alias(key)} {sql_operator}"
             where_clauses.append(where_clause)
 
             if serializers:
-                model_field_name = SQLQueryBuilder.resolve_model_field(base_model, key, relationships)
+                model_field_name = cls.resolve_model_field(base_model, key, relationships)
                 serializer = serializers.get(model_field_name)
             else:
                 serializer = None
@@ -505,7 +507,7 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
                 else:
                     parameters.append(value)
 
-        where_clauses_str = SQLQueryBuilder._join_where_clauses(where_clauses, group_operator)
+        where_clauses_str = cls._join_where_clauses(where_clauses, group_operator)
 
         return where_clauses_str, fields, parameters
 
@@ -593,7 +595,7 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
             ['admin']
         """
         # NOTE: Handle indirect relational fields, such as one-to-many relationships.
-        field_to_alias_pairs = list(cls._extract_key_value_pairs(fields))
+        field_to_alias_pairs = list(cls._flatten_pairs(fields))
         grouped_fields = set(
             field
             for field, _alias in field_to_alias_pairs
@@ -723,11 +725,13 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
             return "ASC" if sort_order == 0 else "DESC" if sort_order == 1 else str(sort_order).upper()
         return str(sort_order).upper()
 
-    @staticmethod
-    def _extract_key_value_pairs(data: str | Tuple[str, Any] | Dict[str, Any] | Iterable[Any], 
-                                 keys_only: bool = False
-                                 ) -> Generator[Tuple[str, Any] | str, None, None]:
-        """Recursively extracts key-value pairs from various data structures.
+    @classmethod
+    def _flatten_pairs(
+            cls,
+            data: str | Tuple[str, Any] | Dict[str, Any] | Iterable[Any],
+            keys_only: bool = False
+        ) -> Generator[Tuple[str, Any] | str, None, None]:
+        """Recursively flattens key-value pairs from various data structures.
 
         This method supports:
         - Strings (yields the string as both key and value)
@@ -738,26 +742,27 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
 
         Args:
             data: The input data, which can be a string, tuple of two elements,
-                  dictionary, or an iterable containing any of these.
+                dictionary, or an iterable containing any of these.
             keys_only: If True, only keys will be yielded (ignoring values).
 
         Yields:
-            Tuple[str, Any]: Tuples of (key, value) extracted from the input, or just (key) if keys_only is True.
+            Tuple[str, Any] | str: Tuples of (key, value) extracted from the input,
+                or just (key) if keys_only is True.
 
         Examples:
-            >>> list(SQLQueryBuilder._extract_key_value_pairs("status"))
+            >>> list(SQLQueryBuilder._flatten_pairs("status"))
             [('status', 'status')]
 
-            >>> list(SQLQueryBuilder._extract_key_value_pairs(("priority", 1)))
+            >>> list(SQLQueryBuilder._flatten_pairs(("priority", 1)))
             [('priority', 1)]
 
-            >>> list(SQLQueryBuilder._extract_key_value_pairs({"name": "Alice", "age": 30}))
+            >>> list(SQLQueryBuilder._flatten_pairs({"name": "Alice", "age": 30}))
             [('name', 'Alice'), ('age', 30)]
 
-            >>> list(SQLQueryBuilder._extract_key_value_pairs([("id", 42), {"role": "admin"}]))
+            >>> list(SQLQueryBuilder._flatten_pairs([("id", 42), {"role": "admin"}]))
             [('id', 42), ('role', 'admin')]
 
-            >>> list(SQLQueryBuilder._extract_key_value_pairs([
+            >>> list(SQLQueryBuilder._flatten_pairs([
             ...     "category",
             ...     ("level", "high"),
             ...     {"status": "active", "rank": 5}
@@ -766,20 +771,20 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
         """
         # Handle the simple case where data is a string.
         if isinstance(data, str):
-            yield keys_only and data or (data, data)
+            yield data if keys_only else (data, data)
 
         # Check early if data is a tuple of length 2.
         elif isinstance(data, tuple) and len(data) == 2:
-            yield keys_only and data[0] or data
+            yield data[0] if keys_only else data
 
         # Handle the case where data is a dict.
         elif isinstance(data, dict):
-            yield from keys_only and data.keys() or data.items()
+            yield from data.keys() if keys_only else data.items()
 
         # Otherwise, if it’s an iterable (but not a string), recursively process each element.
         elif isinstance(data, Iterable):
             for item in data:
-                yield from SQLQueryBuilder._extract_key_value_pairs(item, keys_only)
+                yield from cls._flatten_pairs(item, keys_only)
 
     @staticmethod
     def _parse_relationship(relationship: str, sep: str = CHAIN_SEPARATOR) -> Tuple[str, str]:
@@ -787,8 +792,8 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
         """
         return relationship.rsplit(sep, 1)
 
-    @staticmethod
-    def _is_one_to_many_field(base_model: str, field: str, relationships: Dict[str, str], sep: str = CHAIN_SEPARATOR) -> bool:
+    @classmethod
+    def _is_one_to_many_field(cls, base_model: str, field: str, relationships: Dict[str, str], sep: str = CHAIN_SEPARATOR) -> bool:
         """Checks if a hierarchical field implies a one-to-many relationship.
 
         Starting from base_model, it inspects each segment of the field (e.g. "child_tasks.grandchild_field")
@@ -803,10 +808,10 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
         Returns:
             bool: True if the field represents a one-to-many relationship; otherwise False.
         """
-        return bool(SQLQueryBuilder.get_to_many_chain(base_model, field, relationships, sep=sep))
+        return bool(cls.get_to_many_chain(base_model, field, relationships, sep=sep))
 
-    @staticmethod
-    def get_to_many_chain(base_model: str, field: str, relationships: Dict[str, str], sep: str = CHAIN_SEPARATOR) -> bool:
+    @classmethod
+    def get_to_many_chain(cls, base_model: str, field: str, relationships: Dict[str, str], sep: str = CHAIN_SEPARATOR) -> bool:
         """Scans the relationship chain for the given field and returns the first chain segment that 
         qualifies as a one-to-many join.
 
@@ -840,11 +845,11 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
 
         # Assume propagate_hierarchies is implemented.
         # It should return a list of join chains with the leaf pruned.
-        relation_chains = SQLQueryBuilder.propagate_hierarchies([field], sep=sep, prune_leaves=1)
+        relation_chains = cls.propagate_hierarchies([field], sep=sep, prune_leaves=1)
 
         # Iterate over the generated join chains.
         for chain in relation_chains:
-            resolved_field = SQLQueryBuilder.resolve_model_field(
+            resolved_field = cls.resolve_model_field(
                 base_model=base_model, field_chain=chain, relationships=relationships, sep=sep
             )
 
@@ -862,11 +867,11 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
 
         return f" {group_operator_str} ".join(where_clauses)
 
-    @staticmethod
-    def _build_inner_alias(field: str, base_alias: str = '_', sep: str = CHAIN_SEPARATOR) -> str:
+    @classmethod
+    def _build_inner_alias(cls, field: str, base_alias: str = '_', sep: str = CHAIN_SEPARATOR) -> str:
         if sep in field:
             # e.g. "shot.sequence" => "'shot'.sequence"
-            relation_chain, relation_field = SQLQueryBuilder._parse_relationship(field, sep=sep)
+            relation_chain, relation_field = cls._parse_relationship(field, sep=sep)
             inner_alias = f"'{relation_chain}'.{relation_field}"
         else:
             # e.g. "shot" => '_.shot'
