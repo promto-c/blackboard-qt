@@ -218,10 +218,10 @@ class DraggableItem(QtWidgets.QFrame):
         self.label.setPlainText(self._text)
         self.label.setReadOnly(True)
         self.label.setDisabled(True)
-        self.label.setFrameStyle(QtWidgets.QFrame.NoFrame)
-        self.label.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
-        self.label.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
-        self.label.setFocusPolicy(QtCore.Qt.NoFocus)
+        self.label.setFrameStyle(QtWidgets.QFrame.Shape.NoFrame)
+        self.label.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.label.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.label.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
         
         self.highlighter = SearchHighlighter(self.label.document())
 

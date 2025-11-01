@@ -503,7 +503,7 @@ class AddEditRecordDialog(QtWidgets.QDialog):
             selected_items = []
             for index in range(input_widget.count()):
                 item = input_widget.item(index)
-                if item.checkState() == QtCore.Qt.Checked:
+                if item.checkState() == QtCore.Qt.CheckState.Checked:
                     selected_items.append(item.data(QtCore.Qt.ItemDataRole.UserRole) or item.text())
             return selected_items
 
@@ -799,7 +799,7 @@ class DatabaseViewWidget(DataViewWidget):
             return
 
         dialog = AddEditRecordDialog(self.db_manager, self._base_model)
-        if dialog.exec_() == QtWidgets.QDialog.Accepted:
+        if dialog.exec_() == QtWidgets.QDialog.DialogCode.Accepted:
             self.populate()
 
     def edit_record(self, item: 'TreeWidgetItem', column):
@@ -808,7 +808,7 @@ class DatabaseViewWidget(DataViewWidget):
         row_data = {self.tree_widget.headerItem().text(col): item.get_value(col) for col in range(self.tree_widget.columnCount())}
         dialog = AddEditRecordDialog(self.db_manager, self._base_model, row_data)
 
-        if dialog.exec_() == QtWidgets.QDialog.Accepted:
+        if dialog.exec_() == QtWidgets.QDialog.DialogCode.Accepted:
             self.populate()
 
     # TODO: Add support composite pks
@@ -831,10 +831,10 @@ class DatabaseViewWidget(DataViewWidget):
         confirm = QtWidgets.QMessageBox.question(
             self, "Confirm Delete",
             f"Are you sure you want to delete the record with {pk_display}?",
-            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+            QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No
         )
 
-        if confirm == QtWidgets.QMessageBox.Yes:
+        if confirm == QtWidgets.QMessageBox.StandardButton.Yes:
             self._base_model.delete_record(pk_values)
             self.populate()
 

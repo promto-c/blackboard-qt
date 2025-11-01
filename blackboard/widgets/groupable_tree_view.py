@@ -73,7 +73,7 @@ class GroupedTreeModel(QtGui.QStandardItemModel):
 class TreeView(QtWidgets.QTreeView):
     def __init__(self, parent: Optional[QtCore.QObject] = None):
         super().__init__(parent)
-        self.header().setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        self.header().setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
         self.header().customContextMenuRequested.connect(self.show_header_context_menu)
         self.model = GroupedTreeModel(self)
         self.setModel(self.model)

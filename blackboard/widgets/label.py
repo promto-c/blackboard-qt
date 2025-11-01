@@ -96,7 +96,7 @@ class LabelEmbedderWidget(QtWidgets.QWidget):
         """Sets the alignment of the label.
 
         Args:
-            alignment: The alignment flag for the label (e.g., QtCore.Qt.AlignLeft).
+            alignment: The alignment flag for the label (e.g., QtCore.Qt.AlignmentFlag.AlignLeft).
         """
         self._label.setAlignment(alignment)
 

@@ -79,7 +79,7 @@ class TableItem(QtWidgets.QGraphicsRectItem):
 
         # Table header
         self.header = QtWidgets.QGraphicsTextItem(table_name, self)
-        self.header.setFont(QtGui.QFont("Arial", 12, QtGui.QFont.Bold))
+        self.header.setFont(QtGui.QFont("Arial", 12, QtGui.QFont.Weight.Bold))
         self.header.setDefaultTextColor(TEXT_COLOR)
         self.header.setPos(5, 5)
 
@@ -262,7 +262,7 @@ class ERDiagramView(QtWidgets.QGraphicsView):
                 route_x = max(from_item.sceneBoundingRect().right(),
                             to_item.sceneBoundingRect().right()) + 50
                 path.lineTo(route_x, start_pos.y())  # Move horizontally to the right
-                path.lineTo(route_x, end_pos.y())    # Move vertically to target’s height
+                path.lineTo(route_x, end_pos.y())    # Move vertically to target's height
                 path.lineTo(end_pos)                 # Move horizontally to the target
             else:
                 # Default midpoint-based path
@@ -306,7 +306,7 @@ class ERDiagramView(QtWidgets.QGraphicsView):
         """Zoom in or out with mouse wheel.
         """
         # Tell the view to treat the mouse cursor as the zoom anchor.
-        self.setTransformationAnchor(QtWidgets.QGraphicsView.AnchorUnderMouse)
+        self.setTransformationAnchor(QtWidgets.QGraphicsView.ViewportAnchor.AnchorUnderMouse)
 
         # Determine zoom factor.
         factor = 1.15 if event.angleDelta().y() > 0 else 0.85
@@ -317,8 +317,8 @@ class ERDiagramView(QtWidgets.QGraphicsView):
     def mousePressEvent(self, event):
         """Start panning with middle mouse button.
         """
-        if event.button() == QtCore.Qt.MiddleButton:
-            self.setCursor(QtCore.Qt.ClosedHandCursor)
+        if event.button() == QtCore.Qt.MouseButton.MiddleButton:
+            self.setCursor(QtCore.Qt.CursorShape.ClosedHandCursor)
             self.last_drag_pos = event.pos()
             event.accept()
 
@@ -328,8 +328,8 @@ class ERDiagramView(QtWidgets.QGraphicsView):
             # Calculate delta movement and account for zoom level
             delta = self.mapToScene(event.pos()) - self.mapToScene(self.last_drag_pos)
             # Invert the delta to drag in the correct direction
-            self.setTransformationAnchor(QtWidgets.QGraphicsView.NoAnchor)
-            self.setResizeAnchor(QtWidgets.QGraphicsView.NoAnchor)
+            self.setTransformationAnchor(QtWidgets.QGraphicsView.ViewportAnchor.NoAnchor)
+            self.setResizeAnchor(QtWidgets.QGraphicsView.ViewportAnchor.NoAnchor)
             self.translate(delta.x(), delta.y())
             self.last_drag_pos = event.pos()
             event.accept()
@@ -338,8 +338,8 @@ class ERDiagramView(QtWidgets.QGraphicsView):
 
     def mouseReleaseEvent(self, event):
         """End panning."""
-        if event.button() == QtCore.Qt.MiddleButton:
-            self.setCursor(QtCore.Qt.ArrowCursor)
+        if event.button() == QtCore.Qt.MouseButton.MiddleButton:
+            self.setCursor(QtCore.Qt.CursorShape.ArrowCursor)
             self.last_drag_pos = None
             event.accept()
         else:

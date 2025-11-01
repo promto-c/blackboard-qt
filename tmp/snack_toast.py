@@ -7,7 +7,7 @@ class SnackToast(QtWidgets.QWidget):
     closed = QtCore.pyqtSignal(object)  # emits self on close
 
     def __init__(self,
-                 message: str = "Opening file…",
+                 message: str = "Opening file...",
                  duration_ms: int = 3000,
                  action_text: str = "",
                  on_action=None,
@@ -44,34 +44,34 @@ class SnackToast(QtWidgets.QWidget):
 
         # Frameless, translucent, topmost, non-activating.
         self.setWindowFlags(
-            QtCore.Qt.Tool
-            | QtCore.Qt.FramelessWindowHint
-            | QtCore.Qt.WindowStaysOnTopHint
-            | QtCore.Qt.NoDropShadowWindowHint
+            QtCore.Qt.WindowType.Tool
+            | QtCore.Qt.WindowType.FramelessWindowHint
+            | QtCore.Qt.WindowType.WindowStaysOnTopHint
+            | QtCore.Qt.WindowType.NoDropShadowWindowHint
         )
-        self.setAttribute(QtCore.Qt.WA_TranslucentBackground, True)
-        self.setAttribute(QtCore.Qt.WA_ShowWithoutActivating, True)
-        self.setFocusPolicy(QtCore.Qt.NoFocus)
+        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
+        self.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
         self.setWindowOpacity(0.0)
 
         # --- Background layer (holds blurred/tinted rounded image) ---
         self._bg = QtWidgets.QLabel(self)
         self._bg.setObjectName("bg")
-        self._bg.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, True)
+        self._bg.setAttribute(QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
 
         # --- Foreground card content ---
         self._card = QtWidgets.QWidget(self)
-        self._card.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, False)
+        self._card.setAttribute(QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
 
         icon_lbl = QtWidgets.QLabel(self._card)
         icon_lbl.setPixmap(self._make_icon_pixmap(20))
         icon_lbl.setFixedSize(24, 24)
-        icon_lbl.setAlignment(QtCore.Qt.AlignCenter)
+        icon_lbl.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
 
         msg_lbl = QtWidgets.QLabel(message, self._card)
         msg_lbl.setObjectName("msg")
         msg_lbl.setWordWrap(False)
-        msg_lbl.setAlignment(QtCore.Qt.AlignVCenter)
+        msg_lbl.setAlignment(QtCore.Qt.AlignmentFlag.AlignVCenter)
 
         self._act_btn = QtWidgets.QPushButton(action_text, self._card)
         self._act_btn.setObjectName("act")
@@ -101,9 +101,9 @@ class SnackToast(QtWidgets.QWidget):
 
         row = QtWidgets.QHBoxLayout()
         row.setSpacing(10)
-        row.addWidget(icon_lbl, 0, QtCore.Qt.AlignVCenter)
+        row.addWidget(icon_lbl, 0, QtCore.Qt.AlignmentFlag.AlignVCenter)
         row.addWidget(msg_lbl, 1)
-        row.addWidget(self._act_btn, 0, QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        row.addWidget(self._act_btn, 0, QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
 
         v = QtWidgets.QVBoxLayout(self._card)
         v.setContentsMargins(14, 12, 14, 10)
@@ -121,9 +121,9 @@ class SnackToast(QtWidgets.QWidget):
         # Animations (no QGraphicsOpacityEffect on live widget).
         self._anim_group = QtCore.QParallelAnimationGroup(self)
         self._fade = QtCore.QPropertyAnimation(self, b"windowOpacity", self)
-        self._fade.setEasingCurve(QtCore.QEasingCurve.InOutQuad)
+        self._fade.setEasingCurve(QtCore.QEasingCurve.Type.InOutQuad)
         self._slide = QtCore.QPropertyAnimation(self, b"pos", self)
-        self._slide.setEasingCurve(QtCore.QEasingCurve.OutCubic)
+        self._slide.setEasingCurve(QtCore.QEasingCurve.Type.OutCubic)
         self._anim_group.addAnimation(self._fade)
         self._anim_group.addAnimation(self._slide)
 
@@ -174,7 +174,7 @@ class SnackToast(QtWidgets.QWidget):
 
     def dismiss(self):
         """Dismiss with exit animation and emit closed(self)."""
-        if self._anim_group.state() == QtCore.QAbstractAnimation.Running:
+        if self._anim_group.state() == QtCore.QAbstractAnimation.State.Running:
             self._anim_group.stop()
         self._life_timer.stop()
 
@@ -223,10 +223,10 @@ class SnackToast(QtWidgets.QWidget):
 
         # Tint and rounded mask.
         final_pm = QtGui.QPixmap(blurred.size())
-        final_pm.fill(QtCore.Qt.transparent)
+        final_pm.fill(QtCore.Qt.GlobalColor.transparent)
 
         p = QtGui.QPainter(final_pm)
-        p.setRenderHints(QtGui.QPainter.Antialiasing | QtGui.QPainter.SmoothPixmapTransform, True)
+        p.setRenderHints(QtGui.QPainter.RenderHint.Antialiasing | QtGui.QPainter.RenderHint.SmoothPixmapTransform, True)
 
         path = QtGui.QPainterPath()
         rect = QtCore.QRectF(0, 0, final_pm.width(), final_pm.height())
@@ -238,7 +238,7 @@ class SnackToast(QtWidgets.QWidget):
         p.drawPixmap(0, 0, blurred)
 
         # Overlay tint.
-        p.setCompositionMode(QtGui.QPainter.CompositionMode_SourceOver)
+        p.setCompositionMode(QtGui.QPainter.CompositionMode.CompositionMode_SourceOver)
         p.fillRect(rect, self._glass_tint)
         p.end()
 
@@ -257,7 +257,7 @@ class SnackToast(QtWidgets.QWidget):
         item.setGraphicsEffect(blur)
         scene.addItem(item)
 
-        out = QtGui.QImage(pm.size(), QtGui.QImage.Format_ARGB32_Premultiplied)
+        out = QtGui.QImage(pm.size(), QtGui.QImage.Format.Format_ARGB32_Premultiplied)
         out.fill(0)
         painter = QtGui.QPainter(out)
         scene.render(painter, QtCore.QRectF(out.rect()), QtCore.QRectF(pm.rect()))
@@ -287,10 +287,10 @@ class SnackToast(QtWidgets.QWidget):
 
     def eventFilter(self, obj, event):
         et = event.type()
-        if et in (QtCore.QEvent.MouseButtonPress, QtCore.QEvent.MouseButtonRelease):
+        if et in (QtCore.QEvent.Type.MouseButtonPress, QtCore.QEvent.Type.MouseButtonRelease):
             self.dismiss()
             return True
-        if et == QtCore.QEvent.KeyPress and event.key() == QtCore.Qt.Key_Escape:
+        if et == QtCore.QEvent.Type.KeyPress and event.key() == QtCore.Qt.Key.Key_Escape:
             self.dismiss()
             return True
         return super().eventFilter(obj, event)
@@ -298,10 +298,10 @@ class SnackToast(QtWidgets.QWidget):
     # ---------------- Visual helper ----------------
     def _make_icon_pixmap(self, size: int) -> QtGui.QPixmap:
         pm = QtGui.QPixmap(size, size)
-        pm.fill(QtCore.Qt.transparent)
+        pm.fill(QtCore.Qt.GlobalColor.transparent)
         p = QtGui.QPainter(pm)
-        p.setRenderHint(QtGui.QPainter.Antialiasing, True)
-        p.setPen(QtCore.Qt.NoPen)
+        p.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing, True)
+        p.setPen(QtCore.Qt.PenStyle.NoPen)
         p.setBrush(QtGui.QColor(120, 160, 255))
         p.drawEllipse(0, 0, size, size)
         pen = QtGui.QPen(QtGui.QColor(20, 28, 40))
@@ -439,7 +439,7 @@ class NotificationCenter(QtCore.QObject):
         """Animate a toast to a new position when the stack reflows."""
         anim = QtCore.QPropertyAnimation(toast, b"pos", toast)
         anim.setDuration(160)
-        anim.setEasingCurve(QtCore.QEasingCurve.OutCubic)
+        anim.setEasingCurve(QtCore.QEasingCurve.Type.OutCubic)
         anim.setStartValue(toast.pos())
         anim.setEndValue(target)
         # Keep a reference on the widget to prevent GC.
@@ -491,25 +491,25 @@ def main():
     root.setWindowTitle("Active-Display Notifications Demo")
     root.resize(560, 340)
 
-    btn1 = QtWidgets.QPushButton("Notify: Opening file…")
+    btn1 = QtWidgets.QPushButton("Notify: Opening file...")
     btn2 = QtWidgets.QPushButton("Notify with Action")
     btn3 = QtWidgets.QPushButton("Burst x5")
 
     lay = QtWidgets.QVBoxLayout(root)
     lay.addStretch(1)
-    lay.addWidget(btn1, 0, QtCore.Qt.AlignHCenter)
-    lay.addWidget(btn2, 0, QtCore.Qt.AlignHCenter)
-    lay.addWidget(btn3, 0, QtCore.Qt.AlignHCenter)
+    lay.addWidget(btn1, 0, QtCore.Qt.AlignmentFlag.AlignHCenter)
+    lay.addWidget(btn2, 0, QtCore.Qt.AlignmentFlag.AlignHCenter)
+    lay.addWidget(btn3, 0, QtCore.Qt.AlignmentFlag.AlignHCenter)
     lay.addStretch(1)
 
     center = NotificationCenter.instance()
 
     def do_basic():
-        center.show("Opening file…", duration_ms=2800)
+        center.show("Opening file...", duration_ms=2800)
 
     def do_action():
         center.show(
-            "Opening /shots/SH020/plates/…",
+            "Opening /shots/SH020/plates/...",
             duration_ms=4200,
             action_text="Open Folder",
             on_action=lambda: QtGui.QDesktopServices.openUrl(

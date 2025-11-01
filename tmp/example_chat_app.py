@@ -12,22 +12,22 @@ def apply_dark_theme(app: QtWidgets.QApplication):
     app.setStyle("Fusion")
     palette = QtGui.QPalette()
     # Base colors
-    palette.setColor(QtGui.QPalette.Window, QtGui.QColor(30, 30, 30))
-    palette.setColor(QtGui.QPalette.WindowText, QtGui.QColor(220, 220, 220))
-    palette.setColor(QtGui.QPalette.Base, QtGui.QColor(25, 25, 25))
-    palette.setColor(QtGui.QPalette.AlternateBase, QtGui.QColor(35, 35, 35))
-    palette.setColor(QtGui.QPalette.ToolTipBase, QtGui.QColor(50, 50, 50))
-    palette.setColor(QtGui.QPalette.ToolTipText, QtGui.QColor(220, 220, 220))
+    palette.setColor(QtGui.QPalette.ColorRole.Window, QtGui.QColor(30, 30, 30))
+    palette.setColor(QtGui.QPalette.ColorRole.WindowText, QtGui.QColor(220, 220, 220))
+    palette.setColor(QtGui.QPalette.ColorRole.Base, QtGui.QColor(25, 25, 25))
+    palette.setColor(QtGui.QPalette.ColorRole.AlternateBase, QtGui.QColor(35, 35, 35))
+    palette.setColor(QtGui.QPalette.ColorRole.ToolTipBase, QtGui.QColor(50, 50, 50))
+    palette.setColor(QtGui.QPalette.ColorRole.ToolTipText, QtGui.QColor(220, 220, 220))
     # Text
-    palette.setColor(QtGui.QPalette.Text, QtGui.QColor(220, 220, 220))
-    palette.setColor(QtGui.QPalette.Button, QtGui.QColor(45, 45, 45))
-    palette.setColor(QtGui.QPalette.ButtonText, QtGui.QColor(220, 220, 220))
-    palette.setColor(QtGui.QPalette.BrightText, QtGui.QColor(255, 0, 0))
+    palette.setColor(QtGui.QPalette.ColorRole.Text, QtGui.QColor(220, 220, 220))
+    palette.setColor(QtGui.QPalette.ColorRole.Button, QtGui.QColor(45, 45, 45))
+    palette.setColor(QtGui.QPalette.ColorRole.ButtonText, QtGui.QColor(220, 220, 220))
+    palette.setColor(QtGui.QPalette.ColorRole.BrightText, QtGui.QColor(255, 0, 0))
     # Links
-    palette.setColor(QtGui.QPalette.Link, QtGui.QColor(42, 130, 218))
+    palette.setColor(QtGui.QPalette.ColorRole.Link, QtGui.QColor(42, 130, 218))
     # Highlights
-    palette.setColor(QtGui.QPalette.Highlight, QtGui.QColor(42, 130, 218))
-    palette.setColor(QtGui.QPalette.HighlightedText, QtGui.QColor(30, 30, 30))
+    palette.setColor(QtGui.QPalette.ColorRole.Highlight, QtGui.QColor(42, 130, 218))
+    palette.setColor(QtGui.QPalette.ColorRole.HighlightedText, QtGui.QColor(30, 30, 30))
     app.setPalette(palette)
 
 
@@ -39,7 +39,7 @@ class ContactItem(QtWidgets.QWidget):
         layout.setContentsMargins(8, 4, 8, 4)
         # Avatar
         label_avatar = QtWidgets.QLabel()
-        label_avatar.setPixmap(avatar.scaled(40, 40, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation))
+        label_avatar.setPixmap(avatar.scaled(40, 40, QtCore.Qt.AspectRatioMode.KeepAspectRatio, QtCore.Qt.TransformationMode.SmoothTransformation))
         layout.addWidget(label_avatar)
         # Name & snippet
         text_container = QtWidgets.QVBoxLayout()
@@ -68,7 +68,7 @@ class ChatBubble(QtWidgets.QWidget):
         self.bubble_label = QtWidgets.QLabel()
         self.bubble_label.setWordWrap(True)
         self.bubble_label.setMaximumWidth(400)
-        self.bubble_label.setTextFormat(QtCore.Qt.RichText)
+        self.bubble_label.setTextFormat(QtCore.Qt.TextFormat.RichText)
         self.set_unhighlighted()
         if is_sender:
             layout.addStretch()
@@ -182,14 +182,14 @@ class ChatWindow(QtWidgets.QWidget):
         left_layout.addWidget(lbl_header)
         # Search in contacts (optional, not implemented)
         search_contacts = QtWidgets.QLineEdit()
-        search_contacts.setPlaceholderText("Search…")
+        search_contacts.setPlaceholderText("Search...")
         search_contacts.setStyleSheet(
             "background-color:#1E1E1E; border-radius:6px; padding:6px; color:white;"
         )
         left_layout.addWidget(search_contacts)
         # Contacts list
         self.contact_list = QtWidgets.QListWidget()
-        self.contact_list.setFrameShape(QtWidgets.QFrame.NoFrame)
+        self.contact_list.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
         left_layout.addWidget(self.contact_list)
         main_layout.addWidget(self.left_panel)
 
@@ -208,13 +208,13 @@ class ChatWindow(QtWidgets.QWidget):
         header_layout.addWidget(self.lbl_contact)
         header_layout.addStretch()
         self.btn_settings = QtWidgets.QPushButton()
-        self.btn_settings.setIcon(self.style().standardIcon(QtWidgets.QStyle.SP_FileDialogDetailedView))
+        self.btn_settings.setIcon(self.style().standardIcon(QtWidgets.QStyle.StandardPixmap.SP_FileDialogDetailedView))
         self.btn_settings.setStyleSheet("color:white; background:none; border:none;")
         header_layout.addWidget(self.btn_settings)
         right_layout.addLayout(header_layout)
         # Search bar for chat
         self.search_bar = QtWidgets.QLineEdit()
-        self.search_bar.setPlaceholderText("Search chat…")
+        self.search_bar.setPlaceholderText("Search chat...")
         self.search_bar.setStyleSheet(
             "background-color:#3A3A3A; color:white; border-radius:6px; padding:6px;"
         )
@@ -231,7 +231,7 @@ class ChatWindow(QtWidgets.QWidget):
         # Input
         input_layout = QtWidgets.QHBoxLayout()
         self.input_field = QtWidgets.QLineEdit()
-        self.input_field.setPlaceholderText("Type a message…")
+        self.input_field.setPlaceholderText("Type a message...")
         self.input_field.setStyleSheet("background-color:#2A2A2A; color:white; border-radius:6px; padding:8px;")
         self.btn_send = QtWidgets.QPushButton("▶")
         self.btn_send.setStyleSheet("background-color:#2E5ACC; color:white; border:none; padding:8px; border-radius:6px;")
@@ -247,7 +247,7 @@ class ChatWindow(QtWidgets.QWidget):
             last_time = self.messages[name][-1][2]
             item = QtWidgets.QListWidgetItem()
             # store name in item for easy retrieval
-            item.setData(QtCore.Qt.UserRole, name)
+            item.setData(QtCore.Qt.ItemDataRole.UserRole, name)
             widget = ContactItem(avatar, name, last_msg, last_time)
             item.setSizeHint(widget.sizeHint())
             self.contact_list.addItem(item)
@@ -308,7 +308,7 @@ class ChatWindow(QtWidgets.QWidget):
             self.message_area.verticalScrollBar().maximum()))
 
     def open_chat(self, item: QtWidgets.QListWidgetItem):
-        name = item.data(QtCore.Qt.UserRole)
+        name = item.data(QtCore.Qt.ItemDataRole.UserRole)
         self.current_contact = name
         self.lbl_contact.setText(name)
         # Show back button in narrow view

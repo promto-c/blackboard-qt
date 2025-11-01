@@ -1000,7 +1000,7 @@ class FloatingCard(QtWidgets.QWidget):
     def add_image_thumbnail(self, image_path):
         """Add a scaled image thumbnail to the card."""
         image_label = QtWidgets.QLabel(self)
-        image_label.setAlignment(QtCore.Qt.AlignCenter)
+        image_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         pixmap = QtGui.QPixmap(image_path)
         
         if not pixmap.isNull():
@@ -1142,10 +1142,7 @@ class TransparentFloatingLayout(QtWidgets.QWidget):
     WINDOW_FLAGS = QtCore.Qt.WindowType.FramelessWindowHint | QtCore.Qt.WindowType.WindowStaysOnTopHint
 
     def __init__(self, window_title: str = "Feedback and Comment System", parent = None):
-        super().__init__(parent, self.WINDOW_FLAGS)
-
-        # Store the arguments
-        self.window_title = window_title
+        super().__init__(parent, self.WINDOW_FLAGS, windowTitle=window_title)
 
         # Initialize setup
         self.__init_attributes()
@@ -1164,20 +1161,11 @@ class TransparentFloatingLayout(QtWidgets.QWidget):
     def __init_ui(self):
         """Initialize the UI of the widget.
         """
-        self.setWindowTitle(self.window_title)
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
 
         # Apply shadow effect using utility method
         self.setGraphicsEffect(UIUtil.create_shadow_effect())
         self.resize(400, 800)
-
-        # Create Layouts
-        # --------------
-        # Main layout for the entire widget
-        self.main_layout = QtWidgets.QVBoxLayout(self)
-        self.main_layout.setAlignment(QtCore.Qt.AlignmentFlag.AlignTop)
-        self.main_layout.setSpacing(10)
-        self.main_layout.setContentsMargins(10, 10, 10, 10)
 
         # Create Widgets
         # --------------
@@ -1188,6 +1176,11 @@ class TransparentFloatingLayout(QtWidgets.QWidget):
 
         # Add Widgets to Layouts
         # ----------------------
+        self.main_layout = QtWidgets.QVBoxLayout(self)
+        self.main_layout.setAlignment(QtCore.Qt.AlignmentFlag.AlignTop)
+        self.main_layout.setSpacing(10)
+        self.main_layout.setContentsMargins(0, 0, 0, 0)
+
         self.main_layout.addWidget(self.header_widget)
         self.main_layout.addWidget(self.status_filter_widget)
         self.main_layout.addWidget(self.scroll_area)
@@ -1220,9 +1213,10 @@ class TransparentFloatingLayout(QtWidgets.QWidget):
     # TODO: Implement as class CardArea(QtWidgets.QScrollArea)
     def _create_scroll_area(self) -> QtWidgets.QScrollArea:
         # Scrollable area for feedback cards
-        scroll_area = MomentumScrollArea(self)
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll_area = MomentumScrollArea(
+            self,
+            widgetResizable=True,
+        )
         scroll_area.setStyleSheet("background: transparent; border: none;")  # Transparent scroll area background
 
         # Container for scrollable area
@@ -1232,7 +1226,7 @@ class TransparentFloatingLayout(QtWidgets.QWidget):
         self.scroll_layout.setSpacing(20)
         self.scroll_layout.setContentsMargins(0, 0, 0, 0)
         # Set size policy to expand to the available width
-        # scroll_area.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Minimum)
+        # scroll_area.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Minimum)
 
         # Placeholder card for when no cards match the current filter
         self.placeholder_card = PlaceholderCard(self, "No cards match the selected filters.")
@@ -1294,7 +1288,7 @@ class TransparentFloatingLayout(QtWidgets.QWidget):
 
         # Display thumbnail in attachment preview layout
         thumbnail_label = QtWidgets.QLabel()
-        pixmap = QtGui.QPixmap(file_path).scaled(50, 50, QtCore.Qt.KeepAspectRatio, QtCore.Qt.SmoothTransformation)
+        pixmap = QtGui.QPixmap(file_path).scaled(50, 50, QtCore.Qt.AspectRatioMode.KeepAspectRatio, QtCore.Qt.TransformationMode.SmoothTransformation)
         thumbnail_label.setPixmap(pixmap)
         thumbnail_label.setToolTip(os.path.basename(file_path))
 
@@ -1359,7 +1353,7 @@ class TransparentFloatingLayout(QtWidgets.QWidget):
         """Add a new task or comment as a floating card."""
         new_task_text = message or self.new_task_input.toPlainText().strip()
 
-        # Proceed only if there’s text or images to add
+        # Proceed only if there's text or images to add
         if not new_task_text and not self.attached_images:
             return
 

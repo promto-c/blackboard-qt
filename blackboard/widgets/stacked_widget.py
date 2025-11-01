@@ -1,4 +1,4 @@
-# Type Checking Imports
+﻿# Type Checking Imports
 # ---------------------
 from typing import TYPE_CHECKING, override
 
@@ -51,7 +51,7 @@ class TransitionStackedWidget(QtWidgets.QStackedWidget):
     Public API:
       set_current_index_animated(index, *, mode="slide"|"fade",
                                  direction="auto"|"left"|"right"|"up"|"down",
-                                 duration_ms=260, easing=QEasingCurve.OutCubic)
+                                 duration_ms=260, easing=QEasingCurve.Type.OutCubic)
       set_current_widget_animated(widget, **same_kwargs)
       next_animated(mode="slide", duration_ms=260)
       previous_animated(mode="slide", duration_ms=260)
@@ -64,7 +64,7 @@ class TransitionStackedWidget(QtWidgets.QStackedWidget):
     # Properties with type validation and defaults
     transition_mode: TransitionMode = TypedProp(default=TransitionMode.SLIDE)
     duration_ms: int = TypedProp(default=260, validator=lambda v: v >= 0)
-    easing_curve: QtCore.QEasingCurve.Type | None = TypedProp(default=QtCore.QEasingCurve.OutCubic)
+    easing_curve: QtCore.QEasingCurve.Type | None = TypedProp(default=QtCore.QEasingCurve.Type.OutCubic)
 
     # Initialization and Setup
     # ------------------------
@@ -259,7 +259,7 @@ class TransitionStackedWidget(QtWidgets.QStackedWidget):
         group.addAnimation(fade_out)
         group.addAnimation(fade_in)
 
-        # Lifetime managed manually — do NOT use DeleteWhenStopped
+        # Lifetime managed manually - do NOT use DeleteWhenStopped
         self._anim_group = group
         self._anim_group.finished.connect(self._finalize_animation)
         self._anim_group.start()
@@ -308,7 +308,7 @@ class TransitionStackedWidget(QtWidgets.QStackedWidget):
         group.addAnimation(prev_anim)
         group.addAnimation(next_anim)
 
-        # Lifetime managed manually — do NOT use DeleteWhenStopped
+        # Lifetime managed manually - do NOT use DeleteWhenStopped
         self._anim_group = group
         self._anim_group.finished.connect(self._finalize_animation)
         self._anim_group.start()
@@ -368,12 +368,12 @@ class _DemoPage(QtWidgets.QWidget):
         super().__init__(parent)
         self.setAutoFillBackground(True)
         pal = self.palette()
-        pal.setColor(QtGui.QPalette.Window, color)
+        pal.setColor(QtGui.QPalette.ColorRole.Window, color)
         self.setPalette(pal)
 
         title = QtWidgets.QLabel(text)
         title.setStyleSheet("font-size: 28px; font-weight: 600; color: white;")
-        title.setAlignment(QtCore.Qt.AlignCenter)
+        title.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
 
         layout = QtWidgets.QVBoxLayout(self)
         layout.addStretch(1)

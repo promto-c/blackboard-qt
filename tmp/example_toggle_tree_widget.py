@@ -53,7 +53,7 @@ class AnimatedToggleDelegate(QtWidgets.QStyledItemDelegate):
         track_rect = QtCore.QRectF(x, y, toggle_width, toggle_height)
         track_color = toggle_off_color if progress < 0.5 else toggle_on_color
         painter.setBrush(track_color)
-        painter.setPen(QtCore.Qt.NoPen)
+        painter.setPen(QtCore.Qt.PenStyle.NoPen)
         painter.drawRoundedRect(track_rect, toggle_radius, toggle_radius)
 
         # Draw the toggle circle.

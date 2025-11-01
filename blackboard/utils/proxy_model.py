@@ -149,7 +149,7 @@ class FlatProxyModel(QtCore.QSortFilterProxyModel):
         self._sort()
 
     def _is_accept(self, index: QtCore.QModelIndex):
-        if self.show_only_checked and self.sourceModel().data(index, QtCore.Qt.CheckStateRole) != QtCore.Qt.Checked:
+        if self.show_only_checked and self.sourceModel().data(index, QtCore.Qt.ItemDataRole.CheckStateRole) != QtCore.Qt.CheckState.Checked:
             return False
 
         if self.show_only_leaves and self.sourceModel().hasChildren(index):
@@ -232,12 +232,12 @@ class FlatProxyModel(QtCore.QSortFilterProxyModel):
 
         return None
 
-    def data(self, index, role=QtCore.Qt.DisplayRole):
-        if not self._is_show_checkbox and role == QtCore.Qt.CheckStateRole:
+    def data(self, index, role=QtCore.Qt.ItemDataRole.DisplayRole):
+        if not self._is_show_checkbox and role == QtCore.Qt.ItemDataRole.CheckStateRole:
             return None
         return super().data(index, role)
 
-    def sort(self, column, order=QtCore.Qt.AscendingOrder):
+    def sort(self, column, order=QtCore.Qt.SortOrder.AscendingOrder):
         super().sort(column, order)
         self.layoutAboutToBeChanged.emit()
         self._sort()
@@ -250,10 +250,10 @@ class FlatProxyModel(QtCore.QSortFilterProxyModel):
 
         # Define a key function for sorting based on the data of the column
         def sort_key(index):
-            return self.sourceModel().data(index, QtCore.Qt.DisplayRole)
+            return self.sourceModel().data(index, QtCore.Qt.ItemDataRole.DisplayRole)
 
         # Sort the flat map using the defined key function and the specified order
-        self._flat_map.sort(key=sort_key, reverse=(self.sortOrder() == QtCore.Qt.DescendingOrder))
+        self._flat_map.sort(key=sort_key, reverse=(self.sortOrder() == QtCore.Qt.SortOrder.DescendingOrder))
 
     def eventFilter(self, source, event):
         """Override the eventFilter method to handle events from the parent widget."""
@@ -287,11 +287,11 @@ class CheckableProxyModel(QtCore.QSortFilterProxyModel):
         """Update the check state of parent items based on child states."""
         parent_index = self.parent(child_index)
         while parent_index.isValid():
-            children_states = {self.data(self.index(row, 0, parent_index), QtCore.Qt.CheckStateRole)
+            children_states = {self.data(self.index(row, 0, parent_index), QtCore.Qt.ItemDataRole.CheckStateRole)
                                for row in range(self.rowCount(parent_index))}
-            new_state = QtCore.Qt.PartiallyChecked if len(children_states) > 1 else next(iter(children_states))
+            new_state = QtCore.Qt.CheckState.PartiallyChecked if len(children_states) > 1 else next(iter(children_states))
             self.check_states[parent_index] = new_state
-            self.dataChanged.emit(parent_index, parent_index, [QtCore.Qt.CheckStateRole])
+            self.dataChanged.emit(parent_index, parent_index, [QtCore.Qt.ItemDataRole.CheckStateRole])
             parent_index = self.parent(parent_index)
 
     def update_children(self, parent_index: QtCore.QModelIndex, value: Any):
@@ -299,7 +299,7 @@ class CheckableProxyModel(QtCore.QSortFilterProxyModel):
         for row in range(self.rowCount(parent_index)):
             child_index = self.index(row, 0, parent_index)
             self.check_states[child_index] = value
-            self.dataChanged.emit(child_index, child_index, [QtCore.Qt.CheckStateRole])
+            self.dataChanged.emit(child_index, child_index, [QtCore.Qt.ItemDataRole.CheckStateRole])
             self.update_children(child_index, value)
 
     def set_check_states(self, check_states):
@@ -310,7 +310,7 @@ class CheckableProxyModel(QtCore.QSortFilterProxyModel):
     def _emit_data_changed(self):
         """Emit dataChanged signal for all affected indexes."""
         for index in self.check_states.keys():
-            self.dataChanged.emit(index, index, [QtCore.Qt.CheckStateRole])
+            self.dataChanged.emit(index, index, [QtCore.Qt.ItemDataRole.CheckStateRole])
 
     # Override Methods
     # ----------------
@@ -321,7 +321,7 @@ class CheckableProxyModel(QtCore.QSortFilterProxyModel):
             return self.check_states.get(index, QtCore.Qt.CheckState.Unchecked)
         
         # TODO: Add support additional rows
-        if not index.parent().isValid() and role == QtCore.Qt.DisplayRole:
+        if not index.parent().isValid() and role == QtCore.Qt.ItemDataRole.DisplayRole:
             row = index.row() - super().rowCount(index.parent())
             if row >= 0 and row < len(self._additional_rows):
                 return self._additional_rows[row][index.column()]
@@ -332,7 +332,7 @@ class CheckableProxyModel(QtCore.QSortFilterProxyModel):
     def setData(self, index: QtCore.QModelIndex, value: Any, role: int = QtCore.Qt.ItemDataRole.EditRole) -> bool:
         """Set data at the given index for the specified role.
         """
-        if role == QtCore.Qt.CheckStateRole and index.column() == 0:
+        if role == QtCore.Qt.ItemDataRole.CheckStateRole and index.column() == 0:
             self.check_states[index] = value
             self.dataChanged.emit(index, index, [role])
             self.update_parent(index)

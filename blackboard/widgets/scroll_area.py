@@ -36,9 +36,9 @@ class FadingOverlay(QtWidgets.QWidget):
 
         self._scroll_area = scroll_area
         # Enable transparency and ensure the widget doesn't block mouse events.
-        # self.setAttribute(QtCore.Qt.WA_NoSystemBackground)
+        # self.setAttribute(QtCore.Qt.WidgetAttribute.WA_NoSystemBackground)
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-        # self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+        # self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TranslucentBackground)
         self.resize(self.parent().size())
         # Listen for resize events on the parent.
         self.parent().installEventFilter(self)
@@ -300,7 +300,7 @@ class EdgeAwareScrollArea(MomentumScrollArea):
                 pos = event.pos()
 
             # Skip auto-scroll if the middle mouse button is pressed.
-            if event.buttons() & QtCore.Qt.MiddleButton:
+            if event.buttons() & QtCore.Qt.MouseButton.MiddleButton:
                 return super().eventFilter(obj, event)
 
             if self.orientation == QtCore.Qt.Orientation.Horizontal:

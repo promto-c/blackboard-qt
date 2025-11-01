@@ -7,13 +7,13 @@ from blackboard.widgets.momentum_scroll_widget import MomentumScrollListWidget
 class FadingOverlay(QtWidgets.QWidget):
     """
     This overlay is used only to draw fading gradients on the left and right
-    edges of the list. It no longer handles auto‐scroll events.
+    edges of the list. It no longer handles auto-scroll events.
     """
     def __init__(self, parent):
         super().__init__(parent)
         # Use a nonopaque background and ignore mouse events.
-        self.setAttribute(QtCore.Qt.WA_NoSystemBackground)
-        self.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents)
+        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_NoSystemBackground)
+        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self.fade_width = 30  # Width for the fade effect.
         # Ensure the overlay always covers the parent.
         self.setGeometry(parent.rect())
@@ -29,7 +29,7 @@ class FadingOverlay(QtWidgets.QWidget):
         painter = QtGui.QPainter(self)
         rect = self.rect()
         # Use the parent's background color.
-        bg_color = self.parent().palette().color(QtGui.QPalette.Window)
+        bg_color = self.parent().palette().color(QtGui.QPalette.ColorRole.Window)
         list_widget = self.parent()
         h_scroll = list_widget.horizontalScrollBar()
         scroll_value = h_scroll.value()
@@ -67,12 +67,12 @@ class ListWidgetWithAutoScroll(MomentumScrollListWidget):
         # Create arrow buttons as children of the list widget.
         self.leftButton = QtWidgets.QToolButton(self)
         self.leftButton.setFixedWidth(self.auto_scroll_width)
-        self.leftButton.setArrowType(QtCore.Qt.LeftArrow)
+        self.leftButton.setArrowType(QtCore.Qt.ArrowType.LeftArrow)
         self.leftButton.hide()
 
         self.rightButton = QtWidgets.QToolButton(self)
         self.rightButton.setFixedWidth(self.auto_scroll_width)
-        self.rightButton.setArrowType(QtCore.Qt.RightArrow)
+        self.rightButton.setArrowType(QtCore.Qt.ArrowType.RightArrow)
         self.rightButton.hide()
 
         self.init_ui()
@@ -85,9 +85,9 @@ class ListWidgetWithAutoScroll(MomentumScrollListWidget):
 
     def init_ui(self):
         # Configure the list widget for a horizontal (icon) layout.
-        self.setViewMode(QtWidgets.QListView.IconMode)
-        self.setFlow(QtWidgets.QListView.LeftToRight)
-        self.setResizeMode(QtWidgets.QListView.Adjust)
+        self.setViewMode(QtWidgets.QListView.ViewMode.IconMode)
+        self.setFlow(QtWidgets.QListView.Flow.LeftToRight)
+        self.setResizeMode(QtWidgets.QListView.ResizeMode.Adjust)
         self.setWrapping(False)
         self.setSpacing(5)
 
@@ -97,8 +97,8 @@ class ListWidgetWithAutoScroll(MomentumScrollListWidget):
             self.addItem(item)
 
         # Hide the native scroll bars.
-        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
-        self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
     def mouseMoveEvent(self, event):
         pos = event.pos()

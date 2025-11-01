@@ -46,13 +46,13 @@ class TestFlatProxyModel:
             for i in range(source_model.rowCount()):
                 item = source_model.item(i)
                 item.setCheckable(True)
-                item.setCheckState(QtCore.Qt.Unchecked)
+                item.setCheckState(QtCore.Qt.CheckState.Unchecked)
         
         proxy_model.set_filter_checked_items(show_only_checked)
         assert proxy_model.rowCount() == expected_count
 
         if show_only_checked:
-            source_model.item(0).setCheckState(QtCore.Qt.Checked)
+            source_model.item(0).setCheckState(QtCore.Qt.CheckState.Checked)
             assert proxy_model.rowCount() == 1
 
     def test_mapping_functions(self, proxy_model, source_model):
@@ -98,11 +98,11 @@ class TestCheckableProxyModel:
         child_index = checkable_proxy_model.index(0, 0, parent_index)  # First child of the first parent
 
         # Set data for child, expect parent updates
-        assert checkable_proxy_model.setData(child_index, QtCore.Qt.Checked, QtCore.Qt.CheckStateRole)
-        assert checkable_proxy_model.data(child_index, QtCore.Qt.CheckStateRole) == QtCore.Qt.Checked
+        assert checkable_proxy_model.setData(child_index, QtCore.Qt.CheckState.Checked, QtCore.Qt.ItemDataRole.CheckStateRole)
+        assert checkable_proxy_model.data(child_index, QtCore.Qt.ItemDataRole.CheckStateRole) == QtCore.Qt.CheckState.Checked
 
         # Ensure the parent's state reflects a partial check due to one child being checked
-        assert checkable_proxy_model.data(parent_index, QtCore.Qt.CheckStateRole) == QtCore.Qt.PartiallyChecked
+        assert checkable_proxy_model.data(parent_index, QtCore.Qt.ItemDataRole.CheckStateRole) == QtCore.Qt.CheckState.PartiallyChecked
 
     def test_update_parent_and_children(self, checkable_proxy_model):
         parent_index = checkable_proxy_model.index(0, 0)  # Access the first parent
@@ -110,14 +110,14 @@ class TestCheckableProxyModel:
         second_child = checkable_proxy_model.index(1, 0, parent_index)
 
         # Initially set first child as checked
-        checkable_proxy_model.setData(first_child, QtCore.Qt.Checked, QtCore.Qt.CheckStateRole)
+        checkable_proxy_model.setData(first_child, QtCore.Qt.CheckState.Checked, QtCore.Qt.ItemDataRole.CheckStateRole)
 
         # Now set the parent, expecting children to match parent state
-        checkable_proxy_model.setData(parent_index, QtCore.Qt.Unchecked, QtCore.Qt.CheckStateRole)
-        assert checkable_proxy_model.data(first_child, QtCore.Qt.CheckStateRole) == QtCore.Qt.Unchecked
-        assert checkable_proxy_model.data(second_child, QtCore.Qt.CheckStateRole) == QtCore.Qt.Unchecked
+        checkable_proxy_model.setData(parent_index, QtCore.Qt.CheckState.Unchecked, QtCore.Qt.ItemDataRole.CheckStateRole)
+        assert checkable_proxy_model.data(first_child, QtCore.Qt.ItemDataRole.CheckStateRole) == QtCore.Qt.CheckState.Unchecked
+        assert checkable_proxy_model.data(second_child, QtCore.Qt.ItemDataRole.CheckStateRole) == QtCore.Qt.CheckState.Unchecked
 
     def test_item_flags(self, checkable_proxy_model):
         index = checkable_proxy_model.index(0, 0)  # Access any index
         flags = checkable_proxy_model.flags(index)
-        assert flags & QtCore.Qt.ItemIsUserCheckable
+        assert flags & QtCore.Qt.ItemFlag.ItemIsUserCheckable

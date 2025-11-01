@@ -84,8 +84,8 @@ class CloneWidget(QtCore.QObject):
                 spacer = item.spacerItem()
                 cloned_spacer = QtWidgets.QSpacerItem(
                     spacer.sizeHint().width(), spacer.sizeHint().height(),
-                    spacer.expandingDirections() & QtCore.Qt.Horizontal,
-                    spacer.expandingDirections() & QtCore.Qt.Vertical)
+                    spacer.expandingDirections() & QtCore.Qt.Orientation.Horizontal,
+                    spacer.expandingDirections() & QtCore.Qt.Orientation.Vertical)
                 cloned_layout.addItem(cloned_spacer)
             elif item.layout():
                 nested_layout = item.layout()
@@ -663,13 +663,13 @@ class GalleryWidget(MomentumScrollListWidget):
         self.spacer_item.setFlags(QtCore.Qt.ItemFlag.NoItemFlags)
         self.insertItem(0, self.spacer_item)
 
-        self.setViewMode(QtWidgets.QListWidget.IconMode)
-        self.setResizeMode(QtWidgets.QListWidget.Adjust)
+        self.setViewMode(QtWidgets.QListWidget.ViewMode.IconMode)
+        self.setResizeMode(QtWidgets.QListWidget.ResizeMode.Adjust)
         self.setMovement(QtWidgets.QListWidget.Movement.Static)
         self.setSpacing(10)
-        self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
-        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
-        self.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
+        self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection)
 
         # Set the custom item delegate
         self.setItemDelegate(InvisibleItemDelegate(self))
@@ -799,7 +799,7 @@ class GalleryWidget(MomentumScrollListWidget):
 
     def toggle_field_visibility(self, field, state):
         """Toggle visibility of a specific field."""
-        visible = state == QtCore.Qt.Checked
+        visible = state == QtCore.Qt.CheckState.Checked
         self.visible_fields[field] = visible
 
         # Update all GalleryItemWidgets to reflect the new visibility state

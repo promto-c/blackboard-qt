@@ -7,13 +7,13 @@ from blackboard.widgets.momentum_scroll_widget import MomentumScrollArea
 class FadingOverlay(QtWidgets.QWidget):
     """
     This overlay is used only to draw fading gradients on the left and right
-    edges of the viewport. It no longer handles auto‐scroll events.
+    edges of the viewport. It no longer handles auto-scroll events.
     """
     def __init__(self, parent):
         super().__init__(parent)
         # Use a nonopaque background and ignore mouse events.
-        self.setAttribute(QtCore.Qt.WA_NoSystemBackground)
-        self.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents)
+        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_NoSystemBackground)
+        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self.fade_width = 30  # Width for the fade effect.
         # Ensure the overlay always covers the parent.
         self.setGeometry(parent.rect())
@@ -29,7 +29,7 @@ class FadingOverlay(QtWidgets.QWidget):
         painter = QtGui.QPainter(self)
         rect = self.rect()
         # Use the parent's background color.
-        bg_color = self.parent().palette().color(QtGui.QPalette.Window)
+        bg_color = self.parent().palette().color(QtGui.QPalette.ColorRole.Window)
         scroll_area = self.parent().parent()
         h_scroll = scroll_area.horizontalScrollBar()
         scroll_value = h_scroll.value()
@@ -74,12 +74,12 @@ class AutoScrollMomentumScrollArea(MomentumScrollArea):
         # Create arrow buttons as children of the viewport.
         self.leftButton = QtWidgets.QToolButton(self.viewport())
         self.leftButton.setFixedWidth(self.auto_scroll_width)
-        self.leftButton.setArrowType(QtCore.Qt.LeftArrow)
+        self.leftButton.setArrowType(QtCore.Qt.ArrowType.LeftArrow)
         self.leftButton.hide()
 
         self.rightButton = QtWidgets.QToolButton(self.viewport())
         self.rightButton.setFixedWidth(self.auto_scroll_width)
-        self.rightButton.setArrowType(QtCore.Qt.RightArrow)
+        self.rightButton.setArrowType(QtCore.Qt.ArrowType.RightArrow)
         self.rightButton.hide()
 
     def autoScroll(self):
@@ -92,7 +92,7 @@ class AutoScrollMomentumScrollArea(MomentumScrollArea):
         if obj is self.viewport():
             if event.type() == QtCore.QEvent.MouseMove:
                     # If middle mouse button is pressed, do nothing.
-                if event.buttons() & QtCore.Qt.MiddleButton:
+                if event.buttons() & QtCore.Qt.MouseButton.MiddleButton:
                     return super().eventFilter(obj, event)
 
                 pos = event.pos()
@@ -158,8 +158,8 @@ class WidgetWithScrollableToolbar(QtWidgets.QWidget):
         scroll_area.setWidget(toolbar)
 
         # Hide native scroll bars.
-        scroll_area.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
-        scroll_area.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        scroll_area.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll_area.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
         # Add the fading overlay to the scroll area's viewport.
         overlay = FadingOverlay(scroll_area.viewport())

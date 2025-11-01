@@ -325,13 +325,13 @@ class DrawingLabel(QtWidgets.QWidget):
             self.commit_text()
 
         editor = QtWidgets.QTextEdit(self)
-        editor.setFrameShape(QtWidgets.QFrame.NoFrame)
+        editor.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
         editor.move(position)
         editor.setStyleSheet(f"background: transparent; color: {self.text_color.name()};")
         editor.setFont(self.text_font)
         editor.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         editor.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        editor.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Preferred)
+        editor.setSizePolicy(QtWidgets.QSizePolicy.Policy.Preferred, QtWidgets.QSizePolicy.Policy.Preferred)
         editor.setFixedSize(200, 50)
         editor.setPlainText(text)
 
@@ -878,7 +878,7 @@ class DrawingLabel(QtWidgets.QWidget):
 class FloatingActionButton(QtWidgets.QToolButton):
     def __init__(self, icon, tooltip_text, parent=None):
         super().__init__(parent, icon=icon, toolTip=tooltip_text)
-        self.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
+        self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed)
         self.setIconSize(QtCore.QSize(40, 40))
         self.setStyleSheet('''
             QToolButton {
@@ -992,12 +992,12 @@ class ScreenshotWidget(QtWidgets.QWidget):
     # Public Methods
     # --------------
     def start_drag(self, event: QtGui.QMouseEvent):
-        if event.button() == QtCore.Qt.LeftButton:
+        if event.button() == QtCore.Qt.MouseButton.LeftButton:
             self.drag_start_position = event.globalPos() - self.frameGeometry().topLeft()
             event.accept()
 
     def perform_drag(self, event: QtGui.QMouseEvent):
-        if event.buttons() == QtCore.Qt.LeftButton:
+        if event.buttons() == QtCore.Qt.MouseButton.LeftButton:
             new_pos = event.globalPos() - self.drag_start_position
             screen_geometry = QtGui.QGuiApplication.primaryScreen().availableGeometry()
             x = max(screen_geometry.left(), min(new_pos.x(), screen_geometry.right() - self.width()))
@@ -1061,10 +1061,10 @@ class ScreenshotWidget(QtWidgets.QWidget):
 
     def eventFilter(self, obj, event):
         if obj == self.grip_vertical_btn:
-            if event.type() == QtCore.QEvent.MouseButtonPress and event.button() == QtCore.Qt.LeftButton:
+            if event.type() == QtCore.QEvent.Type.MouseButtonPress and event.button() == QtCore.Qt.MouseButton.LeftButton:
                 self.start_drag(event)
                 return True
-            elif event.type() == QtCore.QEvent.MouseMove and event.buttons() == QtCore.Qt.LeftButton:
+            elif event.type() == QtCore.QEvent.Type.MouseMove and event.buttons() == QtCore.Qt.MouseButton.LeftButton:
                 self.perform_drag(event)
                 return True
         return super().eventFilter(obj, event)
