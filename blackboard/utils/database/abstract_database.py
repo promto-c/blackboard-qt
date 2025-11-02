@@ -132,7 +132,7 @@ class AbstractDatabase(ABC):
         return next(self.query_raw(query, parameters, as_dict=as_dict, is_single_field=is_single_field), None) 
 
     def query(self, model_name: str, fields: Optional[List[str]] = None, 
-              conditions: Optional[Dict[Union['GroupOperator', str], Any]] = None,
+              filters: Optional[Dict[Union['GroupOperator', str], Any]] = None,
               relationships: Dict[str, str] = None, order_by: Optional[Dict[str, 'SortOrder']] = None, 
               limit: Optional[int] = None, as_dict: bool = True,
               ) -> Generator[Tuple[Any, ...] | Dict[str, Any], None, None]:
@@ -140,7 +140,7 @@ class AbstractDatabase(ABC):
 
         Args:
             fields (Optional[List[str]]): Specific fields to retrieve. Defaults to all fields.
-            conditions (Optional[Dict[Union[GroupOperator, str], Any]]): SQL WHERE clause conditions.
+            filters (Optional[Dict[Union[GroupOperator, str], Any]]): SQL WHERE clause filters.
             relationships (Optional[Dict[str, str]]): Relationship mappings.
             order_by (Optional[Dict[str, SortOrder]]): Fields and sort order.
             limit (Optional[int]): Maximum number of rows to retrieve.
@@ -162,7 +162,7 @@ class AbstractDatabase(ABC):
         query, parameters, grouped_field_aliases = SQLQueryBuilder.build_query(
             model=model_name,
             fields=fields,
-            conditions=conditions,
+            filters=filters,
             relationships=relationships,
             order_by=order_by,
             limit=limit,
@@ -193,7 +193,7 @@ class AbstractDatabase(ABC):
         self,
         model_name: str,
         fields: Optional[List[str]] = None,
-        conditions: Optional[Dict[Union['GroupOperator', str], Any]] = None,
+        filters: Optional[Dict[Union['GroupOperator', str], Any]] = None,
         relationships: Optional[Dict[str, str]] = None,
         order_by: Optional[Dict[str, 'SortOrder']] = None,
         as_dict: bool = True,
@@ -206,7 +206,7 @@ class AbstractDatabase(ABC):
         Args:
             model_name (str): Name of the model/table to query.
             fields (Optional[List[str]]): Specific fields to retrieve. Defaults to all fields.
-            conditions (Optional[Dict[Union[GroupOperator, str], Any]]): SQL WHERE clause conditions.
+            filters (Optional[Dict[Union[GroupOperator, str], Any]]): SQL WHERE clause filters.
             relationships (Optional[Dict[str, str]]): Relationship mappings.
             order_by (Optional[Dict[str, 'SortOrder']]): Fields and sort order.
             as_dict (bool): If True, the row is returned as a dictionary; if False, as a tuple.
@@ -219,7 +219,7 @@ class AbstractDatabase(ABC):
         result_generator = self.query(
             model_name=model_name,
             fields=fields,
-            conditions=conditions,
+            filters=filters,
             relationships=relationships,
             order_by=order_by,
             limit=1,
@@ -306,7 +306,7 @@ class AbstractModel(ABC):
 
     def query(self, fields: Optional[List[str]] = None,
               *,
-              conditions: Optional[Dict[Union['GroupOperator', str], Any]] = None,
+              filters: Optional[Dict[Union['GroupOperator', str], Any]] = None,
               order_by: Optional[Dict[str, 'SortOrder']] = None,
               relationships: Optional[Dict[str, str]] = None,
               serializers: Optional[Dict[str, 'DataSerializer']] = None,
@@ -318,7 +318,7 @@ class AbstractModel(ABC):
 
         Args:
             fields (Optional[List[str]]): Specific fields to retrieve. Defaults to all fields.
-            conditions (Optional[Dict[Union[GroupOperator, str], Any]]): SQL WHERE clause conditions.
+            filters (Optional[Dict[Union[GroupOperator, str], Any]]): SQL WHERE clause filters.
             relationships (Optional[Dict[str, str]]): Relationship mappings.
             order_by (Optional[Dict[str, SortOrder]]): Fields and sort order.
             limit (Optional[int]): Maximum number of rows to retrieve.
@@ -330,12 +330,12 @@ class AbstractModel(ABC):
         """
         yield from self._database.query(
             model_name=self._name, fields=fields,
-            conditions=conditions, relationships=relationships, serializers=serializers,
+            filters=filters, relationships=relationships, serializers=serializers,
             order_by=order_by, limit=limit, distinct=distinct, as_dict=as_dict
         )
 
-    def query_one(self, fields=None, conditions=None, relationships=None, values=None, order_by=None, as_dict=True):
-        return next(self.query(fields=fields, conditions=conditions, relationships=relationships, values=values, order_by=order_by, as_dict=as_dict), None)
+    def query_one(self, fields=None, filters=None, relationships=None, values=None, order_by=None, as_dict=True):
+        return next(self.query(fields=fields, filters=filters, relationships=relationships, values=values, order_by=order_by, as_dict=as_dict), None)
 
     def resolve_model(self, relation_chain: str, relationships: Dict[str, str] = None) -> Tuple[str, str]:
         relationships = relationships or {}

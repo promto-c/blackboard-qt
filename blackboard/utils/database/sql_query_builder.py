@@ -1,4 +1,4 @@
-# Type Checking Imports
+﻿# Type Checking Imports
 # ---------------------
 from typing import Dict, Any, Callable, List, Tuple, Optional, Union, Generator, Iterable, Set
 
@@ -40,7 +40,7 @@ class DataSerializer:
 
 @dataclass
 class QueryContext:
-    """A class that holds the context for a built query, including its components such as fields, conditions, and relationships.
+    """A class that holds the context for a built query, including its components such as fields, filters, and relationships.
     """
     model: str
     query: str = field(default_factory=str)
@@ -377,7 +377,7 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
     def build_where_clause(
             cls,
             base_model: str = None,
-            conditions: Dict[Union[GroupOperator, str], Any] = None, 
+            filters: Dict[Union[GroupOperator, str], Any] = None, 
             group_operator: Union[GroupOperator, str] = GroupOperator.AND,
             relationships: Optional[Dict[str, str]] = None,
             serializers: Optional[Dict[str, 'DataSerializer']] = None,
@@ -385,10 +385,10 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
         """Build the WHERE clause of the query.
 
         Examples:
-            >>> SQLQueryBuilder.build_where_clause(conditions={"name": "John"})
+            >>> SQLQueryBuilder.build_where_clause(filters={"name": "John"})
             ('_.name = ?', {'name'}, ['John'])
 
-            >>> where_clauses, fields, parameters = SQLQueryBuilder.build_where_clause(conditions={
+            >>> where_clauses, fields, parameters = SQLQueryBuilder.build_where_clause(filters={
             ...     "age": {"gte": 18},
             ...     "name": {"contains": "John"}
             ... })
@@ -397,17 +397,17 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
             >>> fields == {'name', 'age'}
             True
 
-            >>> SQLQueryBuilder.build_where_clause(conditions={
+            >>> SQLQueryBuilder.build_where_clause(filters={
             ...     "status": {"in": ["active", "pending", "suspended"]}
             ... })
             ('_.status IN (?, ?, ?)', {'status'}, ['active', 'pending', 'suspended'])
 
-            >>> SQLQueryBuilder.build_where_clause(conditions={
+            >>> SQLQueryBuilder.build_where_clause(filters={
             ...     "status": {"not_in": ["inactive", "deleted"]}
             ... })
             ('_.status NOT IN (?, ?)', {'status'}, ['inactive', 'deleted'])
 
-            >>> where_clauses, fields, parameters = SQLQueryBuilder.build_where_clause(conditions={
+            >>> where_clauses, fields, parameters = SQLQueryBuilder.build_where_clause(filters={
             ...     "age": {"lt": 25},
             ...     "name": {"contains": "John"}
             ... })
@@ -416,12 +416,12 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
             >>> fields == {'name', 'age'}
             True
 
-            >>> SQLQueryBuilder.build_where_clause(conditions={
+            >>> SQLQueryBuilder.build_where_clause(filters={
             ...     "id": 123
             ... })
             ('_.id = ?', {'id'}, [123])
 
-            >>> where_clauses, fields, parameters = SQLQueryBuilder.build_where_clause(conditions={
+            >>> where_clauses, fields, parameters = SQLQueryBuilder.build_where_clause(filters={
             ...    "OR": {
             ...        "shot.sequence.project.name": {"contains": "Forest"},
             ...        "shot.status": {"eq": "Completed"},
@@ -433,7 +433,7 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
             >>> fields == {'shot.sequence.project.name', 'assigned_to.role', 'shot.status'}
             True
 
-            >>> where_clauses, fields, parameters = SQLQueryBuilder.build_where_clause(conditions={
+            >>> where_clauses, fields, parameters = SQLQueryBuilder.build_where_clause(filters={
             ...     "OR": {
             ...         "age": {"lt": 18},
             ...         "AND": {
@@ -447,14 +447,14 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
             >>> fields == {'id', 'age', 'status'}
             True
         """
-        if not conditions:
+        if not filters:
             return None, None, None
 
         where_clauses = []
         parameters = []
         fields = set()
 
-        for key, value in cls._flatten_pairs(conditions):
+        for key, value in cls._flatten_pairs(filters):
             # Handle group operators by recursively building sub-clauses.
             if isinstance(key, GroupOperator) or GroupOperator.is_valid(key):
                 sub_where_clause, sub_fields, sub_parameters = cls.build_where_clause(
@@ -546,20 +546,20 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
         )
 
     @classmethod
-    def build_context(cls, model: str, fields = None, conditions = None, relationships = None,
+    def build_context(cls, model: str, fields = None, filters = None, relationships = None,
                       order_by: Optional[Dict[str, SortOrder]] = None, limit: int = None,
                       serializers: Optional[Dict[str, 'DataSerializer']] = None, distinct: bool = False,
                       ) -> 'QueryContext':
         """Constructs a SQL query dynamically based on the given parameters.
 
-        This method builds a `SELECT` query by handling fields, conditions, relationships, 
+        This method builds a `SELECT` query by handling fields, filters, relationships, 
         ordering, and limit constraints. It also processes indirect relational fields, such as 
         one-to-many relationships.
 
         Args:
             model (str): The base model (table) from which to query data.
             fields (Optional[List[str]]): A list of fields to retrieve in the `SELECT` clause.
-            conditions (Optional[Dict[str, Any]]): A dictionary of filter conditions for the `WHERE` clause.
+            filters (Optional[Dict[str, Any]]): A dictionary of filters for the `WHERE` clause.
             relationships (Optional[Dict[str, str]]): A dictionary defining relationships between models.
             order_by (Optional[Dict[str, SortOrder]]): A dictionary specifying sorting order for fields.
             limit (Optional[int]): The maximum number of records to retrieve.
@@ -572,7 +572,7 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
             >>> context = SQLQueryBuilder.build_context(
             ...     model="Tasks",
             ...     fields=["id", "name", "status"],
-            ...     conditions={"status": "active"},
+            ...     filters={"status": "active"},
             ...     relationships={"Tasks.assigned_to": "Users.id"},
             ...     order_by={"created_at": "DESC"},
             ...     limit=10,
@@ -586,7 +586,7 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
             >>> context = SQLQueryBuilder.build_context(
             ...     model="Users",
             ...     fields=["id", "email"],
-            ...     conditions={"role": "admin"},
+            ...     filters={"role": "admin"},
             ...     limit=5
             ... )
             >>> context.query
@@ -603,7 +603,7 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
         )
 
         select_clause = cls.build_select_clause(field_to_alias_pairs, grouped_fields)
-        where_clause, where_fields, parameters = cls.build_where_clause(model, conditions, relationships=relationships, serializers=serializers)
+        where_clause, where_fields, parameters = cls.build_where_clause(model, filters, relationships=relationships, serializers=serializers)
         group_by_clause = cls.build_group_by_clause(grouped_fields, model, relationships)
         fields = list(fields or []) + list(where_fields or [])
         join_clause = cls.build_join_clause(model, fields, relationships)
@@ -781,7 +781,7 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
         elif isinstance(data, dict):
             yield from data.keys() if keys_only else data.items()
 
-        # Otherwise, if it’s an iterable (but not a string), recursively process each element.
+        # Otherwise, if it's an iterable (but not a string), recursively process each element.
         elif isinstance(data, Iterable):
             for item in data:
                 yield from cls._flatten_pairs(item, keys_only)
@@ -902,7 +902,7 @@ if __name__ == "__main__":
         "child_tasks.name",     # Indirect relational field
     ]
 
-    conditions = {
+    filters = {
         "OR": {
             "shot.sequence.project.name": {"contains": "Forest"},
             "shot.status": {"eq": "Completed"},
@@ -931,7 +931,7 @@ if __name__ == "__main__":
     context = SQLQueryBuilder.build_context(
         model=base_model,
         fields=fields,
-        conditions=conditions,
+        filters=filters,
         relationships=relationships,
         order_by=order_by,
         limit=5

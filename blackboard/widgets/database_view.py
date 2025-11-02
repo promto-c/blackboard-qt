@@ -147,7 +147,7 @@ class DataViewWidget(QtWidgets.QWidget):
 
     def populate(self):
         fields = self.tree_widget.fields
-        conditions = self.filter_bar_widget.get_query_conditions()
+        filters = self.filter_bar_widget.get_query_conditions()
 
         ...
 
@@ -944,7 +944,7 @@ class DatabaseViewWidget(DataViewWidget):
         """
         generator = self._base_model.query(
             fields=self.tree_widget.shown_fields,
-            conditions=self.filter_bar_widget.get_query_conditions(),
+            filters=self.filter_bar_widget.get_query_conditions(),
             order_by=self.tree_widget.get_sort_order(),
         )
         self.tree_widget.set_generator(generator)

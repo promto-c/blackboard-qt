@@ -276,7 +276,7 @@ class SQLiteDatabase(AbstractDatabase):
 
     def query(self, model_name: str, fields: Optional[List[str]] = None,
               *,
-              conditions: Optional[Dict[Union['GroupOperator', str], Any]] = None,
+              filters: Optional[Dict[Union['GroupOperator', str], Any]] = None,
               order_by: Optional[Dict[str, 'SortOrder']] = None,
               relationships: Optional[Dict[str, str]] = None,
               serializers: Optional[Dict[str, 'DataSerializer']] = None,
@@ -288,7 +288,7 @@ class SQLiteDatabase(AbstractDatabase):
 
         Args:
             fields (Optional[List[str]]): Specific fields to retrieve. Defaults to all fields.
-            conditions (Optional[Dict[Union[GroupOperator, str], Any]]): SQL WHERE clause conditions.
+            filters (Optional[Dict[Union[GroupOperator, str], Any]]): SQL WHERE clause filters.
             relationships (Optional[Dict[str, str]]): Relationship mappings.
             order_by (Optional[Dict[str, SortOrder]]): Fields and sort order.
             limit (Optional[int]): Maximum number of rows to retrieve.
@@ -315,7 +315,7 @@ class SQLiteDatabase(AbstractDatabase):
         context = SQLQueryBuilder.build_context(
             model=model_name,
             fields=fields,
-            conditions=conditions,
+            filters=filters,
             relationships=relationships,
             serializers=serializers,
             order_by=order_by,
@@ -339,7 +339,7 @@ class SQLiteDatabase(AbstractDatabase):
         row = self.query_one(
             model_name='sqlite_master',
             fields=['name'],
-            conditions={
+            filters={
                 'type': 'table',
                 'name': table_name
             }
@@ -394,7 +394,7 @@ class SQLiteDatabase(AbstractDatabase):
             self.query(
                 model_name='sqlite_master',
                 fields='name',
-                conditions={
+                filters={
                     'type': 'table'
                 },
                 as_dict=False,
@@ -414,7 +414,7 @@ class SQLiteDatabase(AbstractDatabase):
             self.query(
                 model_name='sqlite_master',
                 fields='name',
-                conditions={
+                filters={
                     'type': 'view'
                 },
                 as_dict=False,
@@ -663,7 +663,7 @@ class SQLiteModel(AbstractModel):
         records = self._database.query(
             model_name='_meta_many_to_many',
             fields=['track_field_name', 'junction_table'],
-            conditions={
+            filters={
                 'from_table': self.name, 
             }
         )
@@ -724,7 +724,7 @@ class SQLiteModel(AbstractModel):
         record = self._database.query_one(
             model_name='_meta_many_to_many',
             fields=['track_field_name', 'junction_table'],
-            conditions={
+            filters={
                 'from_table': self.name,
                 'track_field_name': field_name,
             },
@@ -1113,7 +1113,7 @@ class SQLiteModel(AbstractModel):
         return self._database.query_one(
             model_name='_meta_display_field',
             fields='display_foreign_field_name',
-            conditions={
+            filters={
                 'table_name': self.name,
                 'field_name': field_name,
             },
@@ -1152,7 +1152,7 @@ class SQLiteModel(AbstractModel):
             # Translate the rowid into the corresponding foreign key value
             from_value = self.query_one(
                 fields=m2m.local_fk.related_field,
-                conditions={
+                filters={
                     'rowid': from_value,
                 }
             )
@@ -1229,7 +1229,7 @@ class Entity:
     def get(self, fields: List[str] | str = None, as_dict: bool = True):
         return self._model.query_one(
             fields=fields,
-            conditions={'rowids': self._id},
+            filters={'rowids': self._id},
             as_dict=as_dict
         )
 

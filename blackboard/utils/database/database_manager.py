@@ -143,7 +143,7 @@ class DatabaseManager:
         return list(self.database.query(
             model_name='sqlite_master',
             fields='name',
-            conditions={
+            filters={
                 'type': 'table',
                 'name': {'startswith': 'enum_'},
             },
@@ -156,7 +156,7 @@ class DatabaseManager:
         return self.database.query_one(
             model_name='_meta_enum_field',
             fields='enum_table_name',
-            conditions={
+            filters={
                 'table_name': table_name,
                 'field_name': field_name
             },
