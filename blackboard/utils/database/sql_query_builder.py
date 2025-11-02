@@ -152,8 +152,14 @@ class SQLQueryBuilder:
 
     # Utility Methods
     # ---------------
-    @staticmethod
-    def resolve_model(base_model: str, relation_chain: str, relationships: Dict[str, str], sep: str = CHAIN_SEPARATOR) -> str:
+    @classmethod
+    def resolve_model(
+            cls,
+            base_model: str,
+            relation_chain: str,
+            relationships: Dict[str, str],
+            sep: str = CHAIN_SEPARATOR
+        ) -> str:
         """Resolve a chain of relationships to determine the final model.
 
         Starting from a base model, this method iteratively follows the relationship chain defined by
@@ -184,15 +190,22 @@ class SQLQueryBuilder:
         if not relationships:
             return
 
-        for field in relation_chain.split(sep):
+        for field in cls._tokenize_field(relation_chain):
             if (left_model_field := f'{base_model}{sep}{field}') not in relationships:
                 return
-            base_model, _right_field = relationships[left_model_field].split(sep)
+            base_model, _right_field = cls._parse_relationship(relationships[left_model_field])
 
         return base_model
 
     @classmethod
-    def resolve_model_field(cls, base_model: str, field_chain: str, relationships: Dict[str, str], sep: str = CHAIN_SEPARATOR, as_tuple: bool = False) -> str | Tuple[str, str]:
+    def resolve_model_field(
+            cls,
+            base_model: str,
+            field_chain: str,
+            relationships: Dict[str, str],
+            sep: str = CHAIN_SEPARATOR,
+            as_tuple: bool = False,
+        ) -> str | Tuple[str, str]:
         """Constructs a fully-qualified model field identifier by resolving the field chain against a relationships map.
 
         This method takes a starting model and a field chain (which may include relationship navigations using a separator)
@@ -223,23 +236,28 @@ class SQLQueryBuilder:
             >>> SQLQueryBuilder.resolve_model_field('User', 'name.account', relationships)
             'Profile.account'
         """
-        if sep not in field_chain or not relationships:
-            model_name, field_name = base_model, field_chain
+        if not cls._is_relation_chain(field_chain) or not relationships:
+            model, field = base_model, field_chain
         else:
-            parent_chain, field_name = cls._parse_relationship(field_chain, sep)
-            model_name = cls.resolve_model(base_model, parent_chain, relationships, sep)
+            parent_chain, field = cls._parse_relationship(field_chain)
+            model = cls.resolve_model(base_model, parent_chain, relationships)
 
         if as_tuple:
-            return model_name, field_name
+            return model, field
         else:
-            return f"{model_name}{sep}{field_name}"
+            return f"{model}{sep}{field}"
 
     @classmethod
-    def propagate_hierarchies(cls, fields: List[str], sep: str = CHAIN_SEPARATOR, prune_leaves: int = 0) -> List[str]:
+    def propagate_hierarchies(
+            cls,
+            fields: List[str] | str,
+            sep: str = CHAIN_SEPARATOR,
+            prune_leaves: int = 0
+        ) -> List[str]:
         """Propagate and ensure all levels of hierarchy are referenced, with an option to prune levels from the leaves.
 
         Args:
-            fields (list of str): List of hierarchical strings.
+            fields (List[str] | str): List of hierarchical strings.
             sep (str): Separator used to split the hierarchy strings. Default is '.'.
             prune_leaves (int): Number of levels to prune from the end of each hierarchy. Default is 0.
 
@@ -271,14 +289,14 @@ class SQLQueryBuilder:
             >>> SQLQueryBuilder.propagate_hierarchies(["level1/level2", "level1/level2/level3"], sep='/')
             ['level1', 'level1/level2', 'level1/level2/level3']
 
-            >>> SQLQueryBuilder.propagate_hierarchies(["root.branch.leaf"], prune_leaves=3)
-            []
+            >>> SQLQueryBuilder.propagate_hierarchies("root.branch.leaf", prune_leaves=1)
+            ['root', 'root.branch']
         """
         unique_hierarchies = set()
 
         # Iterate over the flattened fields and process the hierarchical tokens.
         for field in cls._flatten_pairs(fields, keys_only=True):
-            tokens = field.split(sep)
+            tokens = cls._tokenize_field(field, sep=sep)
 
             # Generate all prefix levels
             for i in range(len(tokens) - prune_leaves):
@@ -329,15 +347,19 @@ class SQLQueryBuilder:
 
         return ",\n\t".join(select_parts)
 
-    @staticmethod
-    def build_join_clause(base_model: str, fields: List[str], relationships: Dict[str, str], sep: str = CHAIN_SEPARATOR) -> str:
+    @classmethod
+    def build_join_clause(
+            cls,
+            base_model: str,
+            fields: List[str],
+            relationships: Dict[str, str]
+        ) -> str:
         """Build the complete JOIN clause of the query by iterating over the required relation chains.
 
         Args:
             base_model (str): The base table/model for the query (e.g. "Tasks").
             fields (List[str]): A list of hierarchical field strings, e.g. ["shot.sequence.project.name", "shot.name", "status"].
             relationships (Dict[str, str]): A dictionary mapping relationships between tables.
-            sep (str): The separator used in the hierarchical field names.
 
         Returns:
             str: The JOIN clause in SQL format.
@@ -360,16 +382,16 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
         """
         # 1) Gather all chain prefixes that need to be joined.
         # We use prune_leaves=1 so that for a field like "shot.sequence.project.name" we get "shot", "shot.sequence", and "shot.sequence.project"
-        relation_chains = SQLQueryBuilder.propagate_hierarchies(fields, sep=sep, prune_leaves=1)
+        relation_chains = cls.propagate_hierarchies(fields, prune_leaves=1)
         if not relation_chains:
             return ""
         
         # 2) For each chain, build the JOIN clause using the helper method.
-        join_clauses = []
-        for chain in relation_chains:
-            join_clause = SQLQueryBuilder._build_join_clause_for_chain(chain, base_model, relationships, sep)
-            join_clauses.append(join_clause)
-        
+        join_clauses = [
+            cls._build_join_clause_for_chain(chain, base_model, relationships)
+            for chain in relation_chains
+        ]
+
         # 3) Return the JOIN clauses as a single multi-line string.
         return "\n".join(join_clauses)
 
@@ -631,8 +653,14 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
 
         return context
 
-    @staticmethod
-    def _build_join_clause_for_chain(chain: str, base_model: str, relationships: Dict[str, str], sep: str = CHAIN_SEPARATOR) -> str:
+    @classmethod
+    def _build_join_clause_for_chain(
+            cls,
+            chain: str,
+            base_model: str,
+            relationships: Dict[str, str],
+            sep: str = CHAIN_SEPARATOR
+        ) -> str:
         """
         Build a LEFT JOIN clause for a single relation chain.
 
@@ -645,34 +673,37 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
         Returns:
             str: The LEFT JOIN clause for this chain.
         """
-        # Resolve the left model field from the base model and relation chain.
-        left_model_field = SQLQueryBuilder.resolve_model_field(base_model, chain, relationships)
-        # Get the corresponding right model field (e.g. "Shots.id") from relationships.
+        # Resolve model-field relationships: left model-field → mapped right model-field → parsed (model, field)
+        left_model_field = cls.resolve_model_field(base_model, chain, relationships)
         right_model_field = relationships[left_model_field]
-        # Parse the right model and its field.
-        right_model, right_field = SQLQueryBuilder._parse_relationship(right_model_field, sep=sep)
-        
-        # Build the alias for the join table using the chain.
-        right_table_alias = f"'{chain}'"
-        right_field_alias = f"{right_table_alias}{sep}{right_field}"
-        
+        right_model, right_field = cls._parse_relationship(right_model_field)
+
+        # Build the right side alias for the join table using the chain.
+        right_model_alias = f"'{chain}'"
+        right_field_alias = f"{right_model_alias}{sep}{right_field}"
+
         # Determine the left side alias.
         if right_model_field in relationships:
-            alias_prefix, _ = SQLQueryBuilder._parse_relationship(SQLQueryBuilder._build_inner_alias(chain), sep=sep)
-            _, related_field = SQLQueryBuilder._parse_relationship(relationships[right_model_field], sep=sep)
+            alias_prefix, _ = cls._parse_relationship(cls._build_inner_alias(chain))
+            _, related_field = cls._parse_relationship(relationships[right_model_field])
             left_field_alias = f"{alias_prefix}{sep}{related_field}"
         else:
-            left_field_alias = SQLQueryBuilder._build_inner_alias(chain, sep=sep)
+            left_field_alias = cls._build_inner_alias(chain)
         
         # Construct the LEFT JOIN clause.
-        join_clause = (
-            f"LEFT JOIN\n\t{right_model} AS {right_table_alias} "
+        return (
+            f"LEFT JOIN\n\t{right_model} AS {right_model_alias} "
             f"ON {left_field_alias} = {right_field_alias}"
         )
-        return join_clause
 
-    @staticmethod
-    def build_group_by_clause(group_fields: Set[str], base_model: str, relationships: Dict[str, str], sep: str = CHAIN_SEPARATOR) -> str:
+    @classmethod
+    def build_group_by_clause(
+            cls,
+            group_fields: Set[str],
+            base_model: str,
+            relationships: Dict[str, str],
+            sep: str = CHAIN_SEPARATOR
+        ) -> str:
         """Build the GROUP BY clause for the query.
 
         Args:
@@ -701,20 +732,22 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
             ... )
             "'shot'.id, 'shot.sequence.project'.id"
         """
-        group_by_clauses = set()
+        # Build GROUP BY aliases for each field:
+        # follow to-many chain → resolve LHS → map to RHS → derive "alias_prefix.sep.related_field".
+        group_by_clauses: set[str] = set()
         for field in group_fields:
-            parent_chain = SQLQueryBuilder.get_to_many_chain(base_model=base_model, field=field, relationships=relationships, sep=sep)
+            parent_chain = cls.get_to_many_chain(base_model=base_model, field=field, relationships=relationships)
 
-            # Resolve the left model field from the base model and relation chain.
-            left_model_field = SQLQueryBuilder.resolve_model_field(base_model, parent_chain, relationships)
-            # Get the corresponding right model field (e.g. "Shots.id") from relationships.
+            # Resolve model-field relationships: left model-field → mapped right model-field
+            left_model_field = cls.resolve_model_field(base_model, parent_chain, relationships)
             right_model_field = relationships[left_model_field]
 
-            alias_prefix, _ = SQLQueryBuilder._parse_relationship(SQLQueryBuilder._build_inner_alias(parent_chain), sep=sep)
-            _, related_field = SQLQueryBuilder._parse_relationship(relationships[right_model_field], sep=sep)
-            left_field_alias = f"{alias_prefix}{sep}{related_field}"
+            # Derive the alias prefix and related field for the GROUP BY clause.
+            alias_prefix, _ = cls._parse_relationship(cls._build_inner_alias(parent_chain))
+            _, related_field = cls._parse_relationship(relationships[right_model_field])
 
-            group_by_clauses.add(left_field_alias)
+            # Add left field alias to the GROUP BY clauses set
+            group_by_clauses.add(f'{alias_prefix}{sep}{related_field}')
 
         return ', '.join(sorted(group_by_clauses))
 
@@ -787,13 +820,17 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
                 yield from cls._flatten_pairs(item, keys_only)
 
     @staticmethod
+    def _tokenize_field(chain: str, sep: str = CHAIN_SEPARATOR) -> List[str]:
+        return chain.split(sep)
+
+    @staticmethod
     def _parse_relationship(relationship: str, sep: str = CHAIN_SEPARATOR) -> Tuple[str, str]:
         """Parse a simplified relationship string into components.
         """
         return relationship.rsplit(sep, 1)
 
     @classmethod
-    def _is_one_to_many_field(cls, base_model: str, field: str, relationships: Dict[str, str], sep: str = CHAIN_SEPARATOR) -> bool:
+    def _is_one_to_many_field(cls, base_model: str, field: str, relationships: Dict[str, str]) -> bool:
         """Checks if a hierarchical field implies a one-to-many relationship.
 
         Starting from base_model, it inspects each segment of the field (e.g. "child_tasks.grandchild_field")
@@ -803,15 +840,25 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
             base_model (str): The starting model.
             field (str): The hierarchical field (e.g. "child_tasks.grandchild_field").
             relationships (Dict[str, str]): A mapping of relationship keys (e.g. "Model.field") to join targets (e.g. "OtherModel.id").
-            sep (str): The separator for the field (default is CHAIN_SEPARATOR).
 
         Returns:
             bool: True if the field represents a one-to-many relationship; otherwise False.
         """
-        return bool(cls.get_to_many_chain(base_model, field, relationships, sep=sep))
+        return bool(cls.get_to_many_chain(base_model, field, relationships))
 
     @classmethod
-    def get_to_many_chain(cls, base_model: str, field: str, relationships: Dict[str, str], sep: str = CHAIN_SEPARATOR) -> bool:
+    def _is_relation_chain(cls, field: str, sep: str = CHAIN_SEPARATOR) -> bool:
+        """Determines if the given field string represents a relation chain.
+        """
+        return sep in field
+
+    @classmethod
+    def get_to_many_chain(
+            cls,
+            base_model: str,
+            field: str,
+            relationships: Dict[str, str],
+        ) -> bool:
         """Scans the relationship chain for the given field and returns the first chain segment that 
         qualifies as a one-to-many join.
 
@@ -819,7 +866,6 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
             base_model (str): The starting model name.
             field (str): The hierarchical field name to analyze (e.g., "child_tasks.grandchild_field").
             relationships (dict): A dictionary of relationship mappings (e.g., {"Tasks.child_tasks": "Child.parent_id"}).
-            sep (str): The delimiter used to separate segments in the field name.
 
         Returns:
             str: The first join chain segment that corresponds to a one-to-many relationship if detected;
@@ -839,18 +885,14 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
             >>> SQLQueryBuilder.get_to_many_chain("Tasks", "shot.sequence.project.name", relationships) is None
             True
         """
-        # If there is no separator, there is no relationship chain to inspect.
-        if sep not in field:
+        # If there is no relationship chain to inspect.
+        if not cls._is_relation_chain(field):
             return
 
-        # Assume propagate_hierarchies is implemented.
-        # It should return a list of join chains with the leaf pruned.
-        relation_chains = cls.propagate_hierarchies([field], sep=sep, prune_leaves=1)
-
-        # Iterate over the generated join chains.
-        for chain in relation_chains:
+        # Iterate through each propagated hierarchy level.
+        for chain in cls.propagate_hierarchies(field, prune_leaves=1):
             resolved_field = cls.resolve_model_field(
-                base_model=base_model, field_chain=chain, relationships=relationships, sep=sep
+                base_model=base_model, field_chain=chain, relationships=relationships
             )
 
             # If the resolved chain exists in relationships and its join target is also joinable,
@@ -868,16 +910,29 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
         return f" {group_operator_str} ".join(where_clauses)
 
     @classmethod
-    def _build_inner_alias(cls, field: str, base_alias: str = '_', sep: str = CHAIN_SEPARATOR) -> str:
-        if sep in field:
+    def _build_inner_alias(cls, field: str, base_alias: str = '_') -> str:
+        """Builds the inner alias for a given field.
+
+        Args:
+            field (str): The hierarchical field name (e.g. "shot.sequence.name").
+            base_alias (str): The base alias to use for non-relational fields.
+
+        Returns:
+            str: The inner alias in SQL format.
+
+        Examples:
+            >>> SQLQueryBuilder._build_inner_alias("shot.sequence.name")
+            "'shot.sequence'.name"
+            >>> SQLQueryBuilder._build_inner_alias("shot")
+            '_.shot'
+        """
+        if cls._is_relation_chain(field):
             # e.g. "shot.sequence" => "'shot'.sequence"
-            relation_chain, relation_field = cls._parse_relationship(field, sep=sep)
-            inner_alias = f"'{relation_chain}'.{relation_field}"
+            relation_chain, relation_field = cls._parse_relationship(field)
+            return f"'{relation_chain}'.{relation_field}"
         else:
             # e.g. "shot" => '_.shot'
-            inner_alias = f'{base_alias}.{field}'
-
-        return inner_alias
+            return f'{base_alias}.{field}'
 
 
 # Example usage

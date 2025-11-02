@@ -1,6 +1,6 @@
 # Type Checking Imports
 # ---------------------
-from typing import TYPE_CHECKING, List, Tuple, Optional, Dict
+from typing import TYPE_CHECKING, Optional, Dict
 if TYPE_CHECKING:
     from blackboard.utils.database.abstract_database import AbstractModel
 
@@ -17,9 +17,9 @@ from tablerqicon import TablerQIcon
 # Local Imports
 # -------------
 from blackboard.enums.view_enum import FieldType
-from blackboard.utils.database import DatabaseManager, FieldInfo, ManyToManyField
+from blackboard.utils.database import DatabaseManager, FieldInfo
 from blackboard.widgets.main_window import MainWindow
-from blackboard.widgets import TreeWidgetItem, DatabaseViewWidget
+from blackboard.widgets import DatabaseViewWidget
 from blackboard.widgets.header_view import SearchableHeaderView
 from blackboard.widgets.list_widget import EnumListWidget
 from blackboard.widgets.label import LabelEmbedderWidget
