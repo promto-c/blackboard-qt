@@ -234,6 +234,31 @@ class EdgeAwareScrollArea(MomentumScrollArea):
 
     # Overridden Methods
     # ------------------
+    def wheelEvent(self, event: QtGui.QWheelEvent):
+        """Ensure horizontal areas respond to regular wheel scrolling without modifiers.
+        """
+        if self.orientation == QtCore.Qt.Orientation.Horizontal:
+            pd, ad = event.pixelDelta(), event.angleDelta()
+
+            # If there's no horizontal delta but there is vertical delta, translate Y→X
+            if pd.x() == 0 and ad.x() == 0 and (pd.y() != 0 or ad.y() != 0):
+                synthetic = QtGui.QWheelEvent(
+                    event.posF(),
+                    event.globalPosF(),
+                    QtCore.QPoint(pd.y(), 0) if not pd.isNull() else QtCore.QPoint(),
+                    QtCore.QPoint(ad.y(), 0),
+                    event.buttons(),
+                    event.modifiers(),
+                    event.phase(),
+                    event.inverted(),
+                    event.source(),
+                )
+                self.scroll_handler.handle_wheel_event(synthetic)
+                event.accept()
+                return
+
+        super().wheelEvent(event)
+
     def addWidget(self, widget: QtWidgets.QWidget, adjust_size: bool = True):
         """Add a widget to the internal container.
 
