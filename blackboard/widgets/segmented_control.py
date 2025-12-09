@@ -4,7 +4,9 @@ from typing import Iterable
 
 import math
 
-from qtpy import QtCore, QtGui, QtWidgets
+from qtpy import QtCore, QtWidgets
+
+from blackboard.widgets import FlowLayout
 
 
 # Segmented Controls
@@ -35,7 +37,7 @@ class SegmentedControl(QtWidgets.QFrame):
         """
         super().__init__(parent)
 
-        self._items: list[str] = list(items)
+        self._items: list[str] = []
         self._buttons: list[QtWidgets.QToolButton] = []
         self._group = QtWidgets.QButtonGroup(self)
         self._group.setExclusive(True)
@@ -43,36 +45,23 @@ class SegmentedControl(QtWidgets.QFrame):
         self.__init_ui()
         self.__init_connections()
 
+        self.set_items(items)
+
     def __init_ui(self):
         """Initialize the UI and create buttons.
         """
-        self._main_layout = QtWidgets.QVBoxLayout(self)
-        self._main_layout.setContentsMargins(
+        self._layout = FlowLayout(
+            min_item_width=self.MIN_ITEM_WIDTH,
+            h_spacing=self.H_SPACING,
+            v_spacing=self.V_SPACING,
+            parent=self,
+        )
+        self._layout.setContentsMargins(
             self.CONTENT_MARGIN,
             self.CONTENT_MARGIN,
             self.CONTENT_MARGIN,
             self.CONTENT_MARGIN,
         )
-        self._main_layout.setSpacing(self.V_SPACING)
-
-        for index, text in enumerate(self._items):
-            button = QtWidgets.QToolButton(self)
-            button.setText(text)
-            button.setCheckable(True)
-            button.setAutoRaise(False)
-            button.setSizePolicy(
-                QtWidgets.QSizePolicy.Expanding,
-                QtWidgets.QSizePolicy.Fixed,
-            )
-            button.setMinimumHeight(self.ITEM_HEIGHT)
-
-            self._group.addButton(button, index)
-            self._buttons.append(button)
-
-        if self._buttons:
-            self._buttons[0].setChecked(True)
-
-        self._rebuild_layout()
 
     def __init_connections(self):
         """Initialize signal-slot connections.
@@ -96,55 +85,35 @@ class SegmentedControl(QtWidgets.QFrame):
         """
         return self.current_value()
 
-    # Private Methods
-    # ---------------
-    def _clear_rows(self):
-        """Remove all row layouts from the main layout (buttons are kept).
+    def set_items(self, items: Iterable[str]) -> list[QtWidgets.QToolButton]:
+        """Set multiple segments to the control.
+
+        Args:
+            items: Iterable of text labels for new segments.
+
+        Returns:
+            List of created QToolButton instances.
         """
-        while self._main_layout.count():
-            item = self._main_layout.takeAt(0)
-            child_layout = item.layout()
-            if child_layout is not None:
-                # Detach widgets but don't delete them.
-                while child_layout.count():
-                    sub_item = child_layout.takeAt(0)
-                    widget = sub_item.widget()
-                    if widget is not None:
-                        widget.setParent(self)
-                child_layout.deleteLater()
+        self._items = list(items)
+        for index, text in enumerate(self._items):
+            button = QtWidgets.QToolButton(
+                self,
+                text=text,
+                checkable=True,
+                autoRaise=False,
+                minimumHeight=self.ITEM_HEIGHT,
+            )
+            button.setSizePolicy(
+                QtWidgets.QSizePolicy.Expanding,
+                QtWidgets.QSizePolicy.Fixed,
+            )
 
-    def _rebuild_layout(self):
-        """Rebuild the row layouts based on current width and item count.
-        """
-        self._clear_rows()
+            self._group.addButton(button, index)
+            self._buttons.append(button)
+            self._layout.addWidget(button)
 
-        count = len(self._buttons)
-        if not count:
-            return
-
-        total_width = max(1, self.width())
-        left, top, right, bottom = self._main_layout.getContentsMargins()
-        usable_width = max(1, total_width - left - right)
-
-        # Determine maximum columns by minimum width, then balance rows/columns.
-        max_columns = max(1, usable_width // self.MIN_ITEM_WIDTH)
-        rows = math.ceil(count / max_columns)
-        columns = math.ceil(count / rows)
-
-        index = 0
-        for _row in range(rows):
-            row_layout = QtWidgets.QHBoxLayout()
-            row_layout.setContentsMargins(0, 0, 0, 0)
-            row_layout.setSpacing(self.H_SPACING)
-
-            items_in_row = min(columns, count - index)
-            for col in range(items_in_row):
-                button = self._buttons[index]
-                row_layout.addWidget(button)
-                row_layout.setStretch(col, 1)
-                index += 1
-
-            self._main_layout.addLayout(row_layout)
+        if self._buttons:
+            self._buttons[0].setChecked(True)
 
     # Private Methods
     # ---------------
@@ -156,11 +125,3 @@ class SegmentedControl(QtWidgets.QFrame):
         checked_button = self._group.button(button_id)
         if checked_button is not None:
             self.valueChanged.emit(checked_button.text())
-
-    # Overridden Methods
-    # ------------------
-    def resizeEvent(self, event: QtGui.QResizeEvent):
-        """Rebuild layout when the control is resized.
-        """
-        super().resizeEvent(event)
-        self._rebuild_layout()
