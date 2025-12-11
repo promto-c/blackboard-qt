@@ -19,14 +19,17 @@ HEADER_HEIGHT = 30
 MARGIN = 80
 COLUMN_WIDTH = 240
 
-def get_db_schema(db_path: str) -> Tuple[Dict[str, Tuple], Dict[str, str]]:
+def get_db_schema(db_path: str | sqlite3.Connection) -> Tuple[Dict[str, Tuple], Dict[str, str]]:
     """Fetch schema information and foreign keys from the SQLite database.
     """
     schema = {}
     relationships = {}
 
-    # Open database in read-only mode
-    conn = sqlite3.connect(f"file:///{db_path}?mode=ro", uri=True)
+    if isinstance(db_path, sqlite3.Connection):
+        conn = db_path
+    else:
+        # Open database in read-only mode
+        conn = sqlite3.connect(f"file:///{db_path}?mode=ro", uri=True)
 
     with conn:
         cursor = conn.cursor()
@@ -380,14 +383,78 @@ class MainWindow(QtWidgets.QWidget):
                 table_item.setOpacity(0.3)  # Lower opacity for non-matching tables
 
 
+def create_example_memory_db() -> sqlite3.Connection:
+    """Create an example schema in an in-memory SQLite database.
+
+    Returns:
+        sqlite3.Connection: Connection to an in-memory DB with sample tables/data.
+    """
+    conn = sqlite3.connect(":memory:")
+    cursor = conn.cursor()
+
+    cursor.execute("PRAGMA foreign_keys = ON;")
+
+    cursor.executescript(
+        """
+        CREATE TABLE users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL,
+            email TEXT UNIQUE NOT NULL
+        );
+
+        CREATE TABLE projects (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            owner_id INTEGER NOT NULL,
+            FOREIGN KEY(owner_id) REFERENCES users(id)
+        );
+
+        CREATE TABLE tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            status TEXT NOT NULL,
+            project_id INTEGER NOT NULL,
+            assignee_id INTEGER,
+            FOREIGN KEY(project_id) REFERENCES projects(id),
+            FOREIGN KEY(assignee_id) REFERENCES users(id)
+        );
+
+        CREATE TABLE comments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id INTEGER NOT NULL,
+            author_id INTEGER NOT NULL,
+            content TEXT NOT NULL,
+            FOREIGN KEY(task_id) REFERENCES tasks(id),
+            FOREIGN KEY(author_id) REFERENCES users(id)
+        );
+        """
+    )
+
+    cursor.execute("INSERT INTO users (username, email) VALUES ('alice', 'alice@mail.com')")
+    cursor.execute("INSERT INTO users (username, email) VALUES ('bob', 'bob@mail.com')")
+
+    cursor.execute("INSERT INTO projects (name, owner_id) VALUES ('Project A', 1)")
+    cursor.execute("INSERT INTO projects (name, owner_id) VALUES ('Project B', 2)")
+
+    cursor.execute("INSERT INTO tasks (title, status, project_id, assignee_id) VALUES ('Task 1', 'open', 1, 1)")
+    cursor.execute("INSERT INTO tasks (title, status, project_id, assignee_id) VALUES ('Task 2', 'done', 1, 2)")
+    cursor.execute("INSERT INTO tasks (title, status, project_id) VALUES ('Task 3', 'open', 2)")
+
+    cursor.execute("INSERT INTO comments (task_id, author_id, content) VALUES (1, 1, 'Great work!')")
+    cursor.execute("INSERT INTO comments (task_id, author_id, content) VALUES (1, 2, 'Needs improvement')")
+    cursor.execute("INSERT INTO comments (task_id, author_id, content) VALUES (2, 1, 'Good job')")
+
+    conn.commit()
+    return conn
+
+
 def main():
     import sys
     app = QtWidgets.QApplication(sys.argv)
 
     # Load your database path here
-    db_path = "chinook.db"  # Adjust the path to your database file
-
-    main_window = MainWindow(db_path)
+    conn = create_example_memory_db()  # For testing, use in-memory DB
+    main_window = MainWindow(conn)
     main_window.show()
 
     sys.exit(app.exec_())

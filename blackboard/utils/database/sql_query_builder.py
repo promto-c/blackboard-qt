@@ -1,6 +1,6 @@
 ﻿# Type Checking Imports
 # ---------------------
-from typing import Dict, Any, Callable, List, Tuple, Optional, Generator, Iterable, Set
+from typing import Any, Callable, Generator, Iterable
 
 # Standard Imports
 # ----------------
@@ -41,38 +41,37 @@ class DataSerializer:
 
 @dataclass
 class QueryContext:
-    """A class that holds the context for a built query, including its components such as fields, filters, and relationships.
+    """Holds context for building a query, including fields, filters, and relationships.
     """
     model: str
     query: str = field(default_factory=str)
-    parameters: List[Any] = field(default_factory=list)
+    parameters: list[Any] = field(default_factory=list)
 
-    relationships: Dict[str, str] = field(default_factory=dict)
-    serializers: Dict[str, 'DataSerializer'] = field(default_factory=dict)
+    relationships: dict[str, str] = field(default_factory=dict)
+    serializers: dict[str, DataSerializer] = field(default_factory=dict)
 
-    # The actual maps (kept in sync)
-    field_to_alias: Dict[str, str] = field(default_factory=dict)
-    alias_to_field: Dict[str, str] = field(default_factory=dict)
-    grouped_fields: Set[str] = field(default_factory=set)
+    # Actual field/alias maps
+    field_to_alias: dict[str, str] = field(default_factory=dict)
+    alias_to_field: dict[str, str] = field(default_factory=dict)
+    grouped_fields: set[str] = field(default_factory=set)
 
-    # Init-only input for post-init population (optional)
-    field_to_alias_pairs: InitVar[Optional[List[Tuple[str, str]]]] = None
+    # Init-only data used inside __post_init__
+    field_to_alias_pairs: InitVar[list[tuple[str, str]] | None] = None
 
-    def __post_init__(self, field_to_alias_pairs: Optional[List[Tuple[str, str]]]):
+    def __post_init__(self, field_to_alias_pairs: list[tuple[str, str]] | None):
         """Populate alias maps from init-only pairs, and/or normalize provided maps.
         """
-        field_to_alias_pairs = field_to_alias_pairs or []
-        self._add_field_alias_pairs(field_to_alias_pairs)
+        self._add_field_alias_pairs(field_to_alias_pairs or [])
 
-    def _add_field_alias_pairs(self, pairs: List[Tuple[str, str]]):
+    def _add_field_alias_pairs(self, pairs: list[tuple[str, str]]):
         """Add field-alias pairs and maintain a reversible mapping.
 
         This method updates both `field_aliases` (field → alias) and 
         `alias_to_field` (alias → field) mappings.
 
         Args:
-            pairs (List[Tuple[str, str]]): A list of tuples where the first value is 
-                                           the field name and the second is the alias.
+            pairs (list[tuple[str, str]]): A list of tuples where the first value is 
+                the field name and the second is the alias.
 
         Example:
             >>> result = QueryContext(model="tasks", query="SELECT id FROM tasks", parameters=[])
@@ -136,14 +135,14 @@ class QueryContext:
         """
         return SQLQueryBuilder.resolve_model(self.model, relation_chain, self.relationships)
     
-    def resolve_model_field(self, field_chain: str, as_tuple: bool = False) -> Tuple[str, str]:
+    def resolve_model_field(self, field_chain: str, as_tuple: bool = False) -> tuple[str, str]:
         """Resolve a field to determine the final model it belongs to.
 
         Args:
             field_chain (str): The field to resolve to a model.
 
         Returns:
-            Tuple[str, str]: A tuple containing the final model and field name.
+            tuple[str, str]: A tuple containing the final model and field name.
 
         Example:
             >>> relationships = {
@@ -162,7 +161,7 @@ class SQLQueryBuilder:
     CHAIN_SEPARATOR = '.'
 
     # Matches segments like @Assets[project] or @Task[parent_task]
-    _REVERSE_RELATION_RE = re.compile(r'@[^.\[\]]+\[[^\]]+\]')
+    _INDIRECT_RELATION_SEGMENT_RE = re.compile(r'@[^.\[\]]+\[[^\]]+\]')
 
     # Utility Methods
     # ---------------
@@ -171,7 +170,7 @@ class SQLQueryBuilder:
             cls,
             base_model: str,
             relation_chain: str,
-            relationships: Dict[str, str],
+            relationships: dict[str, str],
             sep: str = CHAIN_SEPARATOR
         ) -> str:
         """Resolve a chain of relationships to determine the final model.
@@ -181,15 +180,21 @@ class SQLQueryBuilder:
         model and field (formatted as "Model{sep}field") to a new model. If the chain is invalid or incomplete,
         the function returns None.
 
+        This also supports indirect relation segments of the form '@Model[field]', which represent
+        context-dependent cross-model hops (e.g. reverse/indirect relations).
+
         Args:
             base_model (str): The initial model from which to start the resolution.
-            relation_chain (str): A separator-delimited string representing the chain of relationships (e.g., "name.account").
-            relationships (Dict[str, str]): A dictionary mapping "Model{sep}field" to "RelatedModel{sep}related_field".
+            relation_chain (str): A separator-delimited string representing the chain of relationships
+                (e.g., "name.account" or "project.@Assets[project].owner").
+            relationships (dict[str, str]): A dictionary mapping "Model{sep}field" to
+                "RelatedModel{sep}related_field".
             sep (str, optional): The separator used in both the relationship chain and the dictionary keys.
                  Defaults to CHAIN_SEPARATOR.
 
         Returns:
-            str: The final model reached after resolving the relationship chain. Returns None if the chain cannot be fully resolved.
+            str: The final model reached after resolving the relationship chain. Returns None if the chain
+                cannot be fully resolved.
 
         Examples:
             >>> relationships = {
@@ -214,9 +219,9 @@ class SQLQueryBuilder:
             return
 
         for field in cls._tokenize_field(relation_chain):
-            # TODO: Handle indirect relational fields here
+            # Handle indirect relational fields like "@Assets[project]"
             if field.startswith('@'):
-                base_model, field = cls._parse_relationship(cls._normalize_reverse_relation(field))
+                base_model, field = cls._parse_relationship(cls._normalize_indirect_relation(field))
                 continue
             if (left_model_field := f'{base_model}{sep}{field}') not in relationships:
                 return
@@ -229,29 +234,36 @@ class SQLQueryBuilder:
             cls,
             base_model: str,
             field_chain: str,
-            relationships: Dict[str, str],
+            relationships: dict[str, str],
             sep: str = CHAIN_SEPARATOR,
             as_tuple: bool = False,
-        ) -> str | Tuple[str, str]:
-        """Constructs a fully-qualified model field identifier by resolving the field chain against a relationships map.
+        ) -> str | tuple[str, str]:
+        """Resolve a field chain to its final model and field.
 
-        This method takes a starting model and a field chain (which may include relationship navigations using a separator)
-        and determines the final model associated with the target field. It does so by checking whether the field chain 
-        includes the separator:
-        
-        - If not, it assumes the field belongs directly to the base model.
-        - If it does, it parses the chain and recursively resolves the intermediate model relationships using the provided
-        `relationships` dictionary.
+        This method takes a starting model and a field chain (which may include relationship
+        navigations and indirect relation segments such as '@Assets[project]') and determines
+        the final model associated with the target field.
+
+        Behaviour:
+        - If the chain does not contain the separator, the field is assumed to belong to the base model,
+          unless it is an indirect relation segment ('@Model[field]').
+        - If the chain contains the separator, the part before the last separator is treated as the
+          parent relation chain and resolved to a model, and the last segment is resolved as:
+            * a normal field on that model, or
+            * an indirect relation segment '@Model[field]'.
 
         Args:
             base_model (str): The initial model name from which to begin resolution.
-            field_chain (str): The field or chain of fields to resolve (e.g., "name" or "name.account").
-            relationships (Dict[str, str]): A mapping where each key is in the format "Model{sep}field" and each value is
-                in the format "RelatedModel{sep}related_field". This defines how fields relate across models.
-            sep (str, optional): The separator used in the field chain and relationship keys. Defaults to CHAIN_SEPARATOR.
+            field_chain (str): The field or chain of fields to resolve
+                (e.g., "name", "name.account", "project.@Assets[project].owner").
+            relationships (dict[str, str]): A mapping where each key is in the format
+                "Model{sep}field" and each value is in the format "RelatedModel{sep}related_field".
+            sep (str, optional): The separator used in the field chain and relationship keys.
+                Defaults to CHAIN_SEPARATOR.
+            as_tuple (bool): If True, return a (model, field) tuple instead of "Model.field".
 
         Returns:
-            str: A string representing the resolved model field in the format "FinalModel{sep}field". 
+            str | tuple[str, str]: Either a string "FinalModel{sep}field" or a (model, field) tuple.
 
         Examples:
             >>> relationships = {
@@ -275,16 +287,16 @@ class SQLQueryBuilder:
             'Assets.project'
         """
         if not cls._is_relation_chain(field_chain) or not relationships:
-            # TODO: Handle indirect relational fields here
+            # Simple field or a single indirect relation segment
             if field_chain.startswith('@'):
-                model, field = cls._parse_relationship(cls._normalize_reverse_relation(field_chain))
+                model, field = cls._parse_relationship(cls._normalize_indirect_relation(field_chain))
             else:
                 model, field = base_model, field_chain
         else:
             parent_chain, field = cls._parse_relationship(field_chain)
-            # TODO: Handle indirect relational fields here
+            # Last segment may itself be an indirect relation segment "@Model[field]"
             if field.startswith('@'):
-                model, field = cls._parse_relationship(cls._normalize_reverse_relation(field))
+                model, field = cls._parse_relationship(cls._normalize_indirect_relation(field))
             else:
                 model = cls.resolve_model(base_model, parent_chain, relationships)
 
@@ -296,19 +308,22 @@ class SQLQueryBuilder:
     @classmethod
     def propagate_hierarchies(
             cls,
-            fields: List[str] | str,
+            fields: list[str] | str,
             sep: str = CHAIN_SEPARATOR,
             prune_leaves: int = 0
-        ) -> List[str]:
+        ) -> list[str]:
         """Propagate and ensure all levels of hierarchy are referenced, with an option to prune levels from the leaves.
 
+        Indirect relation segments ('@Model[field]') are treated as normal tokens for the
+        purposes of hierarchy propagation.
+
         Args:
-            fields (List[str] | str): List of hierarchical strings.
+            fields (list[str] | str): List of hierarchical strings.
             sep (str): Separator used to split the hierarchy strings. Default is '.'.
             prune_leaves (int): Number of levels to prune from the end of each hierarchy. Default is 0.
 
         Returns:
-            List[str]: Unique propagated hierarchy references (sorted lexicographically).
+            list[str]: Unique propagated hierarchy references (sorted lexicographically).
 
         Examples:
             >>> SQLQueryBuilder.propagate_hierarchies([
@@ -353,13 +368,17 @@ class SQLQueryBuilder:
         return sorted(unique_hierarchies)
 
     @classmethod
-    def build_select_clause(cls, field_to_alias_pairs: List[str] | List[Tuple[str, str]] | Dict[str, Any] = None,
-                            grouped_fields: Set[str] = None) -> str:
+    def build_select_clause(
+            cls,
+            field_to_alias_pairs: list[str] | list[tuple[str, str]] | dict[str, Any] | None = None,
+            grouped_fields: set[str] | None = None
+        ) -> str:
         """Build the SELECT part of the query.
 
         Arguments:
-            fields: A list containing field names as strings or dictionaries mapping a field to an alias,
+            field_to_alias_pairs: A list containing field names as strings or dictionaries mapping a field to an alias,
                 or a dictionary mapping multiple fields to aliases.
+            grouped_fields: Set of fields that should be aggregated (e.g. one-to-many indirect relations).
 
         Returns:
             str: The SELECT clause in SQL format.
@@ -397,15 +416,20 @@ class SQLQueryBuilder:
     def build_join_clause(
             cls,
             base_model: str,
-            fields: List[str],
-            relationships: Dict[str, str]
+            fields: list[str],
+            relationships: dict[str, str]
         ) -> str:
         """Build the complete JOIN clause of the query by iterating over the required relation chains.
 
+        This method derives joinable prefixes from the requested fields (e.g.,
+        "shot.sequence.project.name" → "shot", "shot.sequence", "shot.sequence.project")
+        and builds one LEFT JOIN per chain. Indirect relation chains
+        (e.g., "@Assets[task]" or "shot.sequence.project.@Assets[project]") are also supported.
+
         Args:
             base_model (str): The base table/model for the query (e.g. "Tasks").
-            fields (List[str]): A list of hierarchical field strings, e.g. ["shot.sequence.project.name", "shot.name", "status"].
-            relationships (Dict[str, str]): A dictionary mapping relationships between tables.
+            fields (list[str]): A list of hierarchical field strings.
+            relationships (dict[str, str]): A dictionary mapping relationships between tables.
 
         Returns:
             str: The JOIN clause in SQL format.
@@ -439,12 +463,15 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
     def build_where_clause(
             cls,
             base_model: str = None,
-            filters: Dict[GroupOperator | str, Any] = None, 
+            filters: dict[GroupOperator | str, Any] = None,
             group_operator: GroupOperator | str = GroupOperator.AND,
-            relationships: Optional[Dict[str, str]] = None,
-            serializers: Optional[Dict[str, 'DataSerializer']] = None,
-        ) -> Tuple[str, Set[str], List[Any]]:
+            relationships: dict[str, str] | None = None,
+            serializers: dict[str, DataSerializer] | None = None,
+        ) -> tuple[str, set[str], list[Any]]:
         """Build the WHERE clause of the query.
+
+        Indirect relation fields (e.g. "project.@Assets[project].name") can be used as filter keys;
+        they are resolved to inner aliases by `_build_inner_alias`.
 
         Examples:
             >>> SQLQueryBuilder.build_where_clause(filters={"name": "John"})
@@ -520,7 +547,8 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
             # Handle group operators by recursively building sub-clauses.
             if isinstance(key, GroupOperator) or GroupOperator.is_valid(key):
                 sub_where_clause, sub_fields, sub_parameters = cls.build_where_clause(
-                    base_model, value, group_operator=key, relationships=relationships, serializers=serializers
+                    base_model, value, group_operator=key,
+                    relationships=relationships, serializers=serializers,
                 )
                 where_clauses.append(f"({sub_where_clause})")
                 fields.update(sub_fields)
@@ -531,7 +559,6 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
             if not isinstance(value, dict):
                 operator = FilterOperation.EQ
             else:
-                # Extract the operator and value.
                 operator, value = next(iter(value.items()))
 
             if not isinstance(operator, FilterOperation):
@@ -574,11 +601,60 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
         return where_clauses_str, fields, parameters
 
     @classmethod
-    def build_order_by_clause(cls, order_by: Dict[str, SortOrder]) -> str:
+    def build_group_by_clause(
+            cls,
+            group_fields: set[str],
+            relationships: dict[str, str],
+            sep: str = CHAIN_SEPARATOR
+        ) -> str:
+        """Build the GROUP BY clause for the query.
+
+        Args:
+            group_fields (Set[str]): A set of fields to group by.
+            base_model (str): The base model for the query.
+            relationships (Dict[str, str]): A dictionary mapping relationships between models.
+            sep (str): The separator used in the hierarchical field names.
+
+        Returns:
+            str: The GROUP BY clause in SQL format.
+
+        Examples:
+            >>> SQLQueryBuilder.build_group_by_clause(
+            ...     group_fields={"shot.@Assets[shot].created_by.name", "shot.sequence.project.@Assets[project].name", "shot.sequence.project.@Assets[project].created_by.name"},
+            ...     relationships={
+            ...         "Tasks.shot": "Shots.id",
+            ...         "Shots.sequence": "Sequences.id",
+            ...         "Sequences.project": "Projects.id",
+            ...         "Assets.project": "Projects.id",
+            ...         "Assets.shot": "Shots.id",
+            ...         "Shots.assets_shot": "Assets.shot",
+            ...         "Projects.assets_project": "Assets.project",
+            ...         "Assets.created_by": "Users.id",
+            ...     }
+            ... )
+            "'shot'.id, 'shot.sequence.project'.id"
+        """
+        # Build GROUP BY aliases for each field:
+        # follow to-many chain → resolve LHS → map to RHS → derive "alias_prefix.sep.related_field".
+        group_by_clauses: set[str] = set()
+        for field in group_fields:
+            parent_chain = cls._extract_indirect_chain(field)
+            alias_prefix, field = cls._parse_relationship(cls._build_inner_alias(parent_chain))
+
+            # "@Assets[shot]" -> "Assets.shot"
+            _, related_field = cls._parse_relationship(relationships[cls._normalize_indirect_relation(field)])
+
+            # Add left field alias to the GROUP BY clauses set
+            group_by_clauses.add(f'{alias_prefix}{sep}{related_field}')
+
+        return ', '.join(sorted(group_by_clauses))
+
+    @classmethod
+    def build_order_by_clause(cls, order_by: dict[str, SortOrder]) -> str:
         """Build the ORDER BY clause of the query.
 
         Args:
-            order_by (Dict[str, SortOrder]): A dictionary specifying the fields to sort by and the sort order.
+            order_by (dict[str, SortOrder | str]): A dictionary specifying the fields to sort by and the sort order.
 
         Returns:
             str: The ORDER BY clause in SQL format.
@@ -599,24 +675,21 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
         if not order_by:
             return
 
-        # Ensure that the input for order_by values are `SortOrder` or strings
         return ", ".join(
-            [
-                f"{cls._build_inner_alias(field)} {cls._normalize_sort_order(direction)}"
-                for field, direction in order_by.items()
-            ]
+            f"{cls._build_inner_alias(field)} {cls._normalize_sort_order(direction)}"
+            for field, direction in order_by.items()
         )
 
     @classmethod
-    def build_context(cls, model: str, fields = None, filters = None, relationships = None,
-                      order_by: Optional[Dict[str, SortOrder]] = None, limit: int = None,
-                      serializers: Optional[Dict[str, 'DataSerializer']] = None, distinct: bool = False,
-                      ) -> 'QueryContext':
-        """Constructs a SQL query dynamically based on the given parameters.
+    def build_context(cls, model: str, fields=None, filters=None, relationships=None,
+                      order_by: dict[str, SortOrder] | None = None, limit: int = None,
+                      serializers: dict[str, DataSerializer] | None = None,
+                      distinct: bool = False) -> QueryContext:
+        """Construct a SQL query dynamically based on the given parameters.
 
-        This method builds a `SELECT` query by handling fields, filters, relationships, 
-        ordering, and limit constraints. It also processes indirect relational fields, such as 
-        one-to-many relationships.
+        This method builds a `SELECT` query by handling fields, filters, relationships,
+        ordering, and limit constraints. It also processes indirect relational fields, such as
+        one-to-many or reverse-like relationships expressed via '@Model[field]'.
 
         Args:
             model (str): The base model (table) from which to query data.
@@ -669,34 +742,39 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
             relationships=relationships,
             order_by=order_by,
             limit=limit,
+            serializers=serializers,
             distinct=distinct,
         )
 
         return QueryContext(
-            model=model, query=sql, parameters=parameters,
-            relationships=relationships, serializers=serializers,
-            grouped_fields=grouped_fields, field_to_alias_pairs=field_to_alias_pairs
+            model=model,
+            query=sql,
+            parameters=parameters,
+            relationships=relationships,
+            serializers=serializers,
+            grouped_fields=grouped_fields,
+            field_to_alias_pairs=field_to_alias_pairs,
         )
 
     @classmethod
     def _build_sql(
             cls,
             model: str,
-            field_to_alias_pairs: List[Tuple[str, str]],
-            grouped_fields: Set[str],
+            field_to_alias_pairs: list[tuple[str, str]],
+            grouped_fields: set[str],
             filters: dict[GroupOperator | str, Any] = None,
-            relationships: Optional[Dict[str, str]] = None,
-            order_by: Optional[Dict[str, SortOrder]] = None,
-            limit: Optional[int] = None,
-            serializers: Optional[Dict[str, 'DataSerializer']] = None,
+            relationships: dict[str, str] | None = None,
+            order_by: dict[str, SortOrder] | None = None,
+            limit: int | None = None,
+            serializers: dict[str, 'DataSerializer'] | None = None,
             distinct: bool = False,
-        ) -> Tuple[str, List[Any]]:
+        ) -> tuple[str, list[Any]]:
         """Build the complete SQL query string along with its parameters.
         """
         select_clause = cls.build_select_clause(field_to_alias_pairs, grouped_fields)
         where_clause, where_fields, parameters = cls.build_where_clause(model, filters, relationships=relationships, serializers=serializers)
         group_by_clause = cls.build_group_by_clause(grouped_fields, relationships)
-        fields = field_to_alias_pairs + list(where_fields)
+        fields = field_to_alias_pairs + list(where_fields or [])
         join_clause = cls.build_join_clause(model, fields, relationships)
         order_by_clause = cls.build_order_by_clause(order_by)
 
@@ -720,64 +798,70 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
         return query_clauses_str, parameters
 
     @classmethod
-    def _resolve_grouped_fields(cls, field_to_alias_pairs: str) -> set[str]:
-        """Determine which fields should be grouped based on relationships.
-        
+    def _resolve_grouped_fields(cls, field_to_alias_pairs: list[tuple[str, str]]) -> set[str]:
+        """Determine which fields should be grouped based on indirect relations.
+
         Args:
-            field_to_alias_pairs (List[Tuple[str, str]]): A list of tuples containing field names and their corresponding aliases.
+            field_to_alias_pairs (list[tuple[str, str]]): A list of tuples containing field names and their corresponding aliases.
 
         Returns:
-            Set[str]: A set of fields that should be grouped.
+            set[str]: A set of fields that should be grouped.
         """
-        return set(
+        return {
             field
             for field, _alias in field_to_alias_pairs
             if cls._is_group_field(field)
-        )
-    
+        }
+
     @classmethod
-    def _is_reversion_chain(cls, field: str) -> bool:
-        """
-        Check if the given field string contains any reverse relationship segments.
+    def _is_indirect_relation_chain(cls, field: str) -> bool:
+        """Check if the given field string ends with an indirect relation segment.
+
+        An indirect relation segment is of the form '@Model[field]', and this method
+        returns True if the last segment in the chain matches that pattern.
 
         Args:
             field (str): The field string to check.
-        
-        Returns:    
-            bool: True if the field contains reverse relationship segments, False otherwise.
+
+        Returns:
+            bool: True if the field ends in an indirect relation segment, False otherwise.
         """
-        match = cls._REVERSE_RELATION_RE.search(field)
-        return match and match.end() == len(field)
+        match = cls._INDIRECT_RELATION_SEGMENT_RE.search(field)
+        return bool(match and match.end() == len(field))
 
     @classmethod
     def _build_join_clause_for_chain(
             cls,
             base_model: str,
             chain: str,
-            relationships: Dict[str, str],
-            sep: str = CHAIN_SEPARATOR
+            relationships: dict[str, str],
+            sep: str = CHAIN_SEPARATOR,
         ) -> str:
         """Build a LEFT JOIN clause for a single relation chain.
+
+        Handles both:
+        - forward relations: "shot.sequence.project"
+        - indirect relations: "@Assets[task]" or "shot.sequence.@Assets[project]"
 
         Args:
             base_model (str): The base table/model name.
             chain (str): The relation chain prefix (e.g. "shot" or "shot.sequence").
-            relationships (Dict[str, str]): Mapping of relationships.
+            relationships (dict[str, str]): Mapping of relationships.
             sep (str): The separator used in the chain.
 
         Returns:
             str: The LEFT JOIN clause for this chain.
         """
         # Resolve model-field relationships: left model-field → mapped right model-field → parsed (model, field)
-        if cls._is_reversion_chain(chain):
-            # Handle reverse relationship chains (e.g., "@Assets[task]").
+        if cls._is_indirect_relation_chain(chain):
+            # Handle indirect relation chains (e.g., "@Assets[task]").
             right_model_field = cls.resolve_model_field(base_model, chain, relationships)
             right_model, right_field = cls._parse_relationship(right_model_field)
 
-            # Determine the left side alias.
+            # Determine the left side alias from the inverse relationship.
             left_model, _right_reverse_form = cls._parse_relationship(cls._build_inner_alias(chain))
             _left_model, left_field = cls._parse_relationship(relationships[right_model_field])
-            left_field_alias = f'{left_model}.{left_field}'
+            left_field_alias = f'{left_model}{sep}{left_field}'
 
         else:
             left_model_field = cls.resolve_model_field(base_model, chain, relationships)
@@ -798,62 +882,13 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
         )
 
     @classmethod
-    def build_group_by_clause(
-            cls,
-            group_fields: Set[str],
-            relationships: Dict[str, str],
-            sep: str = CHAIN_SEPARATOR
-        ) -> str:
-        """Build the GROUP BY clause for the query.
-
-        Args:
-            group_fields (Set[str]): A set of fields to group by.
-            base_model (str): The base model for the query.
-            relationships (Dict[str, str]): A dictionary mapping relationships between models.
-            sep (str): The separator used in the hierarchical field names.
-
-        Returns:
-            str: The GROUP BY clause in SQL format.
+    def _normalize_indirect_relation(cls, field: str) -> str:
+        """Transform an indirect relation segment into a standard 'Model.field' format.
 
         Examples:
-            >>> SQLQueryBuilder.build_group_by_clause(
-            ...     group_fields={"shot.@Assets[shot].created_by.name", "shot.sequence.project.@Assets[project].name", "shot.sequence.project.@Assets[project].created_by.name"},
-            ...     relationships={
-            ...         "Tasks.shot": "Shots.id",
-            ...         "Shots.sequence": "Sequences.id",
-            ...         "Sequences.project": "Projects.id",
-            ...         "Assets.project": "Projects.id",
-            ...         "Assets.shot": "Shots.id",
-            ...         "Shots.assets_shot": "Assets.shot",
-            ...         "Projects.assets_project": "Assets.project",
-            ...         "Assets.created_by": "Users.id",
-            ...     }
-            ... )
-            "'shot'.id, 'shot.sequence.project'.id"
-        """
-        # Build GROUP BY aliases for each field:
-        # follow to-many chain → resolve LHS → map to RHS → derive "alias_prefix.sep.related_field".
-        group_by_clauses: set[str] = set()
-        for field in group_fields:
-            parent_chain = cls.get_reverse_relation_chain(field=field)
-            alias_prefix, field = cls._parse_relationship(cls._build_inner_alias(parent_chain))
-
-            # @Assets[shot] > Assets.shot
-            _, related_field = cls._parse_relationship(relationships[cls._normalize_reverse_relation(field)])
-
-            # Add left field alias to the GROUP BY clauses set
-            group_by_clauses.add(f'{alias_prefix}{sep}{related_field}')
-
-        return ', '.join(sorted(group_by_clauses))
-
-    @classmethod
-    def _normalize_reverse_relation(cls, field):
-        """Transform a reverse relationship field into a standard model-field format.
-
-        Examples:
-            >>> SQLQueryBuilder._normalize_reverse_relation("@Assets[project]")
+            >>> SQLQueryBuilder._normalize_indirect_relation("@Assets[project]")
             'Assets.project'
-            >>> SQLQueryBuilder._normalize_reverse_relation("@Users[assigned_tasks]")
+            >>> SQLQueryBuilder._normalize_indirect_relation("@Users[assigned_tasks]")
             'Users.assigned_tasks'
         """
         return field[1:-1].replace('[', '.', 1)
@@ -868,9 +903,9 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
     @classmethod
     def _flatten_pairs(
             cls,
-            data: str | Tuple[str, Any] | Dict[str, Any] | Iterable[Any],
+            data: str | tuple[str, Any] | dict[str, Any] | Iterable[Any],
             keys_only: bool = False
-        ) -> Generator[Tuple[str, Any] | str, None, None]:
+        ) -> Generator[tuple[str, Any] | str, None, None]:
         """Recursively flattens key-value pairs from various data structures.
 
         This method supports:
@@ -927,29 +962,29 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
                 yield from cls._flatten_pairs(item, keys_only)
 
     @staticmethod
-    def _tokenize_field(chain: str, sep: str = CHAIN_SEPARATOR) -> List[str]:
+    def _tokenize_field(chain: str, sep: str = CHAIN_SEPARATOR) -> list[str]:
         return chain.split(sep)
 
     @staticmethod
-    def _parse_relationship(relationship: str, sep: str = CHAIN_SEPARATOR) -> Tuple[str, str]:
-        """Parse a simplified relationship string into components.
+    def _parse_relationship(relationship: str, sep: str = CHAIN_SEPARATOR) -> tuple[str, str]:
+        """Parse a simplified relationship string into (model, field).
         """
         return relationship.rsplit(sep, 1)
 
     @classmethod
     def _is_group_field(cls, field: str) -> bool:
-        """Checks if a hierarchical field implies a one-to-many relationship.
+        """Checks if a hierarchical field implies a one-to-many/indirect relationship.
 
-        Starting from base_model, it inspects each segment of the field (e.g. "child_tasks.grandchild_field")
-        by leveraging get_reverse_relation_chain. If any segment qualifies as one-to-many, the field is treated as such.
+        Any field that contains at least one indirect relation segment
+        ('@Model[field]') is considered groupable.
 
         Args:
-            field (str): The hierarchical field (e.g. "child_tasks.grandchild_field").
+            field (str): The hierarchical field string to check.
 
         Returns:
-            bool: True if the field represents a one-to-many relationship; otherwise False.
+            bool: True if the field implies a one-to-many relationship, False otherwise.
         """
-        return bool(cls.get_reverse_relation_chain(field))
+        return bool(cls._extract_indirect_chain(field))
 
     @classmethod
     def _is_relation_chain(cls, field: str, sep: str = CHAIN_SEPARATOR) -> bool:
@@ -958,24 +993,24 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
         return sep in field
 
     @classmethod
-    def get_reverse_relation_chain(cls, field: str) -> Optional[str]:
+    def _extract_indirect_chain(cls, field: str) -> str | None:
         """Return substring through the last '@Model[field]' match.
 
-        A reverse relation represents an inverted foreign-key reference, where
+        A indirect relation represents an inverted foreign-key reference, where
         the relation points from the related model back to the base model.
         Such relations are denoted by an at-sign followed by the related model
-        name and the referencing field in brackets, e.g. ``@Assets[project]``.
+        name and the referencing field in brackets, e.g. '@Assets[project]'.
 
         Examples:
-            >>> SQLQueryBuilder.get_reverse_relation_chain("shot.sequence.project.@Assets[project].created_by.name")
+            >>> SQLQueryBuilder._extract_indirect_chain("shot.sequence.project.@Assets[project].created_by.name")
             'shot.sequence.project.@Assets[project]'
-            >>> SQLQueryBuilder.get_reverse_relation_chain("@Task[parent_task].project.@Assets[project].name")
+            >>> SQLQueryBuilder._extract_indirect_chain("@Task[parent_task].project.@Assets[project].name")
             '@Task[parent_task].project.@Assets[project]'
-            >>> SQLQueryBuilder.get_reverse_relation_chain("shot.sequence.project.name") is None
+            >>> SQLQueryBuilder._extract_indirect_chain("shot.sequence.project.name") is None
             True
         """
         last_match = None
-        for match in cls._REVERSE_RELATION_RE.finditer(field):
+        for match in cls._INDIRECT_RELATION_SEGMENT_RE.finditer(field):
             last_match = match
         if not last_match:
             return
@@ -984,7 +1019,7 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
         return field[: last_match.end()]
 
     @staticmethod
-    def _join_where_clauses(where_clauses: List[str], group_operator: GroupOperator | str) -> str:
+    def _join_where_clauses(where_clauses: list[str], group_operator: GroupOperator | str) -> str:
         if isinstance(group_operator, GroupOperator):
             group_operator_str = group_operator.sql_operator
         else:

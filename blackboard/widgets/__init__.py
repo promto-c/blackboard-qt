@@ -21,6 +21,7 @@ from .menu import ContextMenu
 from .list_widget import EnumListWidget
 from .drag_pixmap import DragPixmap
 from .label import LabelEmbedderWidget
+from .layout import FlowLayout
 
 
 __all__ = [
@@ -44,4 +45,5 @@ __all__ = [
     'EnumListWidget',
     'DragPixmap',
     'LabelEmbedderWidget',
+    'FlowLayout',
 ]
