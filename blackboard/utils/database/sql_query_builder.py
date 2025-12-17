@@ -308,7 +308,7 @@ class SQLQueryBuilder:
     @classmethod
     def propagate_hierarchies(
             cls,
-            fields: list[str] | str,
+            fields: list[str],
             sep: str = CHAIN_SEPARATOR,
             prune_leaves: int = 0
         ) -> list[str]:
@@ -318,7 +318,7 @@ class SQLQueryBuilder:
         purposes of hierarchy propagation.
 
         Args:
-            fields (list[str] | str): List of hierarchical strings.
+            fields (list[str]): List of hierarchical strings.
             sep (str): Separator used to split the hierarchy strings. Default is '.'.
             prune_leaves (int): Number of levels to prune from the end of each hierarchy. Default is 0.
 
@@ -350,14 +350,15 @@ class SQLQueryBuilder:
             >>> SQLQueryBuilder.propagate_hierarchies(["level1/level2", "level1/level2/level3"], sep='/')
             ['level1', 'level1/level2', 'level1/level2/level3']
 
-            >>> SQLQueryBuilder.propagate_hierarchies("root.branch.leaf", prune_leaves=1)
+            >>> SQLQueryBuilder.propagate_hierarchies(["root.branch.leaf"], prune_leaves=1)
             ['root', 'root.branch']
         """
         unique_hierarchies = set()
 
         # Iterate over the flattened fields and process the hierarchical tokens.
-        for field in cls._flatten_pairs(fields, keys_only=True):
-            tokens = cls._tokenize_field(field, sep=sep)
+        for field in fields:
+            base_field, _ops = cls._strip_value_ops(field)
+            tokens = cls._tokenize_field(base_field, sep=sep)
 
             # Generate all prefix levels
             for i in range(len(tokens) - prune_leaves):
@@ -370,44 +371,88 @@ class SQLQueryBuilder:
     @classmethod
     def build_select_clause(
             cls,
-            field_to_alias_pairs: list[str] | list[tuple[str, str]] | dict[str, Any] | None = None,
-            grouped_fields: set[str] | None = None
+            field_to_alias_pairs: list[tuple[str, str]] | None = None,
         ) -> str:
         """Build the SELECT part of the query.
 
         Arguments:
             field_to_alias_pairs: A list containing field names as strings or dictionaries mapping a field to an alias,
                 or a dictionary mapping multiple fields to aliases.
-            grouped_fields: Set of fields that should be aggregated (e.g. one-to-many indirect relations).
 
         Returns:
             str: The SELECT clause in SQL format.
 
         Examples:
-            >>> SQLQueryBuilder.build_select_clause(["shot.sequence.project.name", "shot.name", "name", "status"])
+            # Basic: no aliases
+            >>> SQLQueryBuilder.build_select_clause([
+            ...     ("shot.sequence.project.name", ""),
+            ...     ("shot.name", ""),
+            ...     ("name", ""),
+            ...     ("status", ""),
+            ... ])
             "'shot.sequence.project'.name AS 'shot.sequence.project.name',\\n\\t'shot'.name AS 'shot.name',\\n\\t_.name AS 'name',\\n\\t_.status AS 'status'"
 
-            >>> SQLQueryBuilder.build_select_clause({"shot.sequence.project.name": "project_name", "shot.name": "shot_name"})
+            # Basic: explicit aliases
+            >>> SQLQueryBuilder.build_select_clause([
+            ...     ("shot.sequence.project.name", "project_name"),
+            ...     ("shot.name", "shot_name"),
+            ... ])
             "'shot.sequence.project'.name AS 'project_name',\\n\\t'shot'.name AS 'shot_name'"
 
-            >>> SQLQueryBuilder.build_select_clause(["shot.sequence.project.name", {"shot.name": "my_shot_name"}, "status"])
+            # Mixed: some aliased, some default-to-field-name
+            >>> SQLQueryBuilder.build_select_clause([
+            ...     ("shot.sequence.project.name", ""),
+            ...     ("shot.name", "my_shot_name"),
+            ...     ("status", ""),
+            ... ])
             "'shot.sequence.project'.name AS 'shot.sequence.project.name',\\n\\t'shot'.name AS 'my_shot_name',\\n\\t_.status AS 'status'"
+
+            # Value stream default aggregation (to-many / indirect) => JSON_GROUP_ARRAY(...)
+            >>> SQLQueryBuilder.build_select_clause(
+            ...     [("shot.@Assets[shot].name", "")],
+            ... )
+            "JSON_GROUP_ARRAY('shot.@Assets[shot]'.name) FILTER (WHERE 'shot.@Assets[shot]'.name IS NOT NULL) AS 'shot.@Assets[shot].name'"
+
+            # Value modifier: distinct() applies to the value stream
+            >>> SQLQueryBuilder.build_select_clause(
+            ...     [("shot.@Assets[shot].name.distinct()", "shot_asset_names")],
+            ... )
+            "JSON_GROUP_ARRAY(DISTINCT 'shot.@Assets[shot]'.name) FILTER (WHERE 'shot.@Assets[shot]'.name IS NOT NULL) AS 'shot_asset_names'"
+
+            # Scalar aggregator: count() consumes the stream and returns a scalar
+            >>> SQLQueryBuilder.build_select_clause(
+            ...     [("shot.@Assets[shot].id.count()", "")],
+            ... )
+            "COUNT('shot.@Assets[shot]'.id) AS 'shot.@Assets[shot].id.count()'"
+
+            # Scalar aggregator + distinct modifier: count distinct values
+            >>> SQLQueryBuilder.build_select_clause(
+            ...     [("shot.@Assets[shot].owner.username.count().distinct()", "")],
+            ... )
+            "COUNT(DISTINCT 'shot.@Assets[shot].owner'.username) AS 'shot.@Assets[shot].owner.username.count().distinct()'"
+
+            # Scalar aggregator with explicit alias
+            >>> SQLQueryBuilder.build_select_clause(
+            ...     [("shot.@Assets[shot].id.count()", "asset_count")],
+            ... )
+            "COUNT('shot.@Assets[shot]'.id) AS 'asset_count'"
         """
-        def _build(field, alias):
-            field_inner_alias = cls._build_inner_alias(field)
-            if grouped_fields and field in grouped_fields:
-                field_inner_alias = f"JSON_GROUP_ARRAY({field_inner_alias}) FILTER (WHERE {field_inner_alias} IS NOT NULL)"
-
-            return f"{field_inner_alias} AS '{alias}'"
-
-        # Convert input into a list of tuples: [(field, alias)]
         if not field_to_alias_pairs:
             return "*"
+
+        def _build(field, alias):
+            alias = alias or field
+            base_field, ops = cls._strip_value_ops(field)
+            field_inner_alias = cls._build_inner_alias(base_field)
+            if cls._is_group_field(field):
+                field_inner_alias = cls._compile_value_expr(field_inner_alias, ops)
+
+            return f"{field_inner_alias} AS '{alias}'"
 
         # Handle both list of tuples (field, alias)
         select_parts = [
             _build(field, alias)
-            for field, alias in cls._flatten_pairs(field_to_alias_pairs)
+            for field, alias in field_to_alias_pairs
         ]
 
         return ",\n\t".join(select_parts)
@@ -537,7 +582,7 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
             True
         """
         if not filters:
-            return None, None, None
+            return None, set(), None
 
         where_clauses = []
         parameters = []
@@ -636,7 +681,7 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
         """
         # Build GROUP BY aliases for each field:
         # follow to-many chain → resolve LHS → map to RHS → derive "alias_prefix.sep.related_field".
-        group_by_clauses: set[str] = set()
+        group_by_clauses = set()
         for field in group_fields:
             parent_chain = cls._extract_indirect_chain(field)
             alias_prefix, field = cls._parse_relationship(cls._build_inner_alias(parent_chain))
@@ -771,11 +816,11 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
         ) -> tuple[str, list[Any]]:
         """Build the complete SQL query string along with its parameters.
         """
-        select_clause = cls.build_select_clause(field_to_alias_pairs, grouped_fields)
-        where_clause, where_fields, parameters = cls.build_where_clause(model, filters, relationships=relationships, serializers=serializers)
-        group_by_clause = cls.build_group_by_clause(grouped_fields, relationships)
-        fields = field_to_alias_pairs + list(where_fields or [])
+        select_clause = cls.build_select_clause(field_to_alias_pairs)
+        where_clause, fields, parameters = cls.build_where_clause(model, filters, relationships=relationships, serializers=serializers)
+        fields.update(cls._flatten_pairs(field_to_alias_pairs, keys_only=True))
         join_clause = cls.build_join_clause(model, fields, relationships)
+        group_by_clause = cls.build_group_by_clause(grouped_fields, relationships)
         order_by_clause = cls.build_order_by_clause(order_by)
 
         query_clauses = [
@@ -1052,6 +1097,41 @@ LEFT JOIN\\n\\tProjects AS 'shot.sequence.project' ON 'shot.sequence'.project = 
             # e.g. "shot" => '_.shot'
             return f'{base_alias}.{field}'
 
+    @staticmethod
+    def _strip_value_ops(field: str) -> tuple[str, list[str]]:
+        """Strip trailing '.op()' value operations and return (base_field, ops)."""
+        ops: list[str] = []
+        while True:
+            match = re.search(r"\.([a-z_]+)\(\)$", field)
+            if not match:
+                break
+            ops.append(match.group(1))
+            field = field[: match.start()]
+        ops.reverse()  # keep left-to-right order as written
+        return field, ops
+
+    @staticmethod
+    def _compile_value_expr(field_inner_alias: str, ops: list[str]) -> str:
+        """Compile a value stream + ops to a SQL select expression (no AS).
+        """
+        # classify
+        distinct_sql = "DISTINCT " if "distinct" in ops else ""
+        scalar_aggs = [op for op in ops if op in {"count", "sum", "avg", "min", "max"}]
+
+        # If a scalar aggregator exists, it consumes the stream into a scalar.
+        if scalar_aggs:
+            # If multiple scalar aggs are chained, use the last one as the effective aggregator.
+            agg = scalar_aggs[-1].upper()
+
+            # COUNT(*) support can be added later; for now we count the expression.
+            return f"{agg}({distinct_sql}{field_inner_alias})"
+
+        # No scalar aggregator => this is a stream result.
+        return (
+            f"JSON_GROUP_ARRAY({distinct_sql}{field_inner_alias}) "
+            f"FILTER (WHERE {field_inner_alias} IS NOT NULL)"
+        )
+
 
 # Example usage
 if __name__ == "__main__":
@@ -1062,8 +1142,7 @@ if __name__ == "__main__":
 
     fields = [
         "shot.sequence.project.name",
-        "shot.sequence.project.@Assets[project].name",  # Indirect relational field
-        # "@Assets[project=shot.sequence.project&category='model'].value.first(created_date:desc)",
+        ("shot.sequence.project.@Assets[project].name.distinct().count()", "project_name_count"),  # Indirect relational field
         "shot.name",
         "name",
         "status",
