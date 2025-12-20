@@ -1,5 +1,6 @@
 ﻿# Type Checking Imports
 # ---------------------
+from __future__ import annotations
 from typing import Any, Callable, Generator, Iterable
 
 # Standard Imports
@@ -9,7 +10,7 @@ from dataclasses import dataclass, field, InitVar
 
 # Local Imports
 # -------------
-from blackboard.enums.view_enum import GroupOperator, SortOrder, FilterOperation
+from blackboard.enums.view_enum import GroupOperator, SortOrder, FilterOperation, SetOperator
 
 
 # Class Definitions
@@ -37,6 +38,67 @@ class DataSerializer:
         """
         self.serialize = serialize
         self.deserialize = deserialize
+
+
+@dataclass(frozen=True)
+class OuterRef:
+    field: str
+
+
+class SetOpsMixin:
+    def union(self: QuerySpecBase, other: QuerySpecBase) -> CompoundQuerySpec:
+        return CompoundQuerySpec(left=self, op=SetOperator.UNION, right=other)
+
+    def union_all(self: QuerySpecBase, other: QuerySpecBase) -> CompoundQuerySpec:
+        return CompoundQuerySpec(left=self, op=SetOperator.UNION_ALL, right=other)
+
+    def intersect(self: QuerySpecBase, other: QuerySpecBase) -> CompoundQuerySpec:
+        return CompoundQuerySpec(left=self, op=SetOperator.INTERSECT, right=other)
+
+    def except_(self: QuerySpecBase, other: QuerySpecBase) -> CompoundQuerySpec:
+        return CompoundQuerySpec(left=self, op=SetOperator.EXCEPT, right=other)
+
+    def __or__(self: QuerySpecBase, other: QuerySpecBase) -> CompoundQuerySpec:
+        return self.union_all(other)
+
+    def __and__(self: QuerySpecBase, other: QuerySpecBase) -> CompoundQuerySpec:
+        return self.intersect(other)
+
+    def __sub__(self: QuerySpecBase, other: QuerySpecBase) -> CompoundQuerySpec:
+        return self.except_(other)
+
+
+@dataclass(frozen=True, kw_only=True)
+class QuerySpecBase(SetOpsMixin):
+    """Base type for all query nodes.
+    """
+    # Global (outer) modifiers for the compound result
+    distinct: bool = False
+    order_by: dict[str, Any] | None = None
+    limit: int | None = None
+
+
+@dataclass(frozen=True)
+class QuerySpec(QuerySpecBase):
+    model: str
+    fields: Any = None
+    filters: dict[Any, Any] | None = None
+
+
+@dataclass(frozen=True)
+class QueryOneSpec(QuerySpec):
+    """Represent a query that expects at most one row (0..1).
+    """
+
+    def __post_init__(self):
+        object.__setattr__(self, "limit", 1)
+
+
+@dataclass(frozen=True)
+class CompoundQuerySpec(QuerySpecBase):
+    left: QuerySpecBase
+    op: SetOperator
+    right: QuerySpecBase
 
 
 @dataclass
@@ -1138,57 +1200,44 @@ if __name__ == "__main__":
     import doctest
     doctest.testmod()
 
-    base_model = 'Tasks'
-
-    fields = [
-        "shot.sequence.project.name",
-        ("shot.sequence.project.@Assets[project].name.distinct().count()", "project_name_count"),  # Indirect relational field
-        "shot.name",
-        "name",
-        "status",
-        "parent_task.name",
-        "start_date",
-        "due_date",
-        "assigned_to.email",
-        "@Assets[task].name",                           # Indirect relational field
-        "@Tasks[parent_task].name",                     # Indirect relational field
-
-        # QueryContext.sub_query_field(
-        #     model="Assets",
-        #     field=...,
-        #     filters=...},
-        # )
-    ]
-
-    filters = {
-        "OR": {
-            "shot.sequence.project.name": {"contains": "Forest"},
-            "shot.status": {"eq": "Completed"},
-            "assigned_to.role": {"eq": "Artist"}
-        }
-    }
-
-    relationships = {
-        "Tasks.shot": "Shots.id",
-        "Shots.sequence": "Sequences.id",
-        "Sequences.project": "Projects.id",
-        "Tasks.assigned_to": "Users.id",
-        "Tasks.parent_task": "Tasks.id",
-        "Assets.project": "Projects.id",
-        "Assets.task": "Tasks.id",
-    }
-
-    order_by = {
-        "shot.name": "desc",
-        "name": "asc"
-    }
-
     context = SQLQueryBuilder.build_context(
-        model=base_model,
-        fields=fields,
-        filters=filters,
-        relationships=relationships,
-        order_by=order_by,
+        model='Tasks',
+        fields=[
+            "shot.sequence.project.name",
+            ("shot.sequence.project.@Assets[project].name.distinct().count()", "project_name_count"),
+            "shot.name",
+            "name",
+            "status",
+            "parent_task.name",
+            "start_date",
+            "due_date",
+            "assigned_to.email",
+            "@Assets[task].name",
+            ("@Tasks[parent_task].name", "child_task_names"),
+        ],
+        filters={
+            "OR": {
+                "shot.sequence.project.name": {"contains": "Forest"},
+                "shot.status": {"eq": "Completed"},
+                "assigned_to.role": {"eq": "Artist"}
+            }
+        },
+        # subqueries={
+        #     ...
+        # },
+        relationships={
+            "Tasks.shot": "Shots.id",
+            "Shots.sequence": "Sequences.id",
+            "Sequences.project": "Projects.id",
+            "Tasks.assigned_to": "Users.id",
+            "Tasks.parent_task": "Tasks.id",
+            "Assets.project": "Projects.id",
+            "Assets.task": "Tasks.id",
+        },
+        order_by={
+            "shot.name": "desc",
+            "name": "asc"
+        },
         limit=5
     )
     print(context.query)
@@ -1196,7 +1245,7 @@ if __name__ == "__main__":
     # NOTE: Example outputs
     # SELECT
     #         'shot.sequence.project'.name AS 'shot.sequence.project.name',
-    #         JSON_GROUP_ARRAY('shot.sequence.project.assets_project'.name) AS 'shot.sequence.project.assets_project.name',
+    #         COUNT(DISTINCT 'shot.sequence.project.@Assets[project]'.name) AS 'project_name_count',
     #         'shot'.name AS 'shot.name',
     #         _.name AS 'name',
     #         _.status AS 'status',
@@ -1204,16 +1253,16 @@ if __name__ == "__main__":
     #         _.start_date AS 'start_date',
     #         _.due_date AS 'due_date',
     #         'assigned_to'.email AS 'assigned_to.email',
-    #         JSON_GROUP_ARRAY('assets_task'.name) AS 'assets_task.name',
-    #         JSON_GROUP_ARRAY('child_tasks'.name) AS 'child_tasks.name'
+    #         JSON_GROUP_ARRAY('@Assets[task]'.name) FILTER (WHERE '@Assets[task]'.name IS NOT NULL) AS '@Assets[task].name',
+    #         JSON_GROUP_ARRAY('@Tasks[parent_task]'.name) FILTER (WHERE '@Tasks[parent_task]'.name IS NOT NULL) AS 'child_task_names'
     # FROM
     #         'Tasks' AS _
     # LEFT JOIN
-    #         Assets AS 'assets_task' ON _.id = 'assets_task'.task
+    #         Assets AS '@Assets[task]' ON _.id = '@Assets[task]'.task
+    # LEFT JOIN
+    #         Tasks AS '@Tasks[parent_task]' ON _.id = '@Tasks[parent_task]'.parent_task
     # LEFT JOIN
     #         Users AS 'assigned_to' ON _.assigned_to = 'assigned_to'.id
-    # LEFT JOIN
-    #         Tasks AS 'child_tasks' ON _.id = 'child_tasks'.parent_task
     # LEFT JOIN
     #         Tasks AS 'parent_task' ON _.parent_task = 'parent_task'.id
     # LEFT JOIN
@@ -1223,7 +1272,7 @@ if __name__ == "__main__":
     # LEFT JOIN
     #         Projects AS 'shot.sequence.project' ON 'shot.sequence'.project = 'shot.sequence.project'.id
     # LEFT JOIN
-    #         Assets AS 'shot.sequence.project.assets_project' ON 'shot.sequence.project'.id = 'shot.sequence.project.assets_project'.project
+    #         Assets AS 'shot.sequence.project.@Assets[project]' ON 'shot.sequence.project'.id = 'shot.sequence.project.@Assets[project]'.project
     # WHERE
     #         ('shot.sequence.project'.name LIKE '%' || ? || '%' OR 'shot'.status = ? OR 'assigned_to'.role = ?)
     # GROUP BY

@@ -111,6 +111,13 @@ class FilterOperation(Enum):
         return self._display_name
 
 
+class SetOperator(str, Enum):
+    UNION = "UNION"
+    UNION_ALL = "UNION ALL"
+    INTERSECT = "INTERSECT"
+    EXCEPT = "EXCEPT"
+
+
 class FieldType(Enum):
     """Enum representing user-friendly column types and their associated filter widgets.
     """
