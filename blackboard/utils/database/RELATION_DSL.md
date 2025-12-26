@@ -1,48 +1,147 @@
 # Relation Query DSL
 
-This document defines the **relation-aware query DSL** used by `SQLQueryBuilder` and `QueryContext` for building SQL queries without writing explicit joins.
+This document defines the **relation-aware query DSL** used by `SQLQueryBuilder`, `QueryContext`, and `QuerySpec` for building SQL queries **without writing explicit joins**.
 
 The goals are:
 
 * Express cross-table queries using **field paths**, not raw SQL.
-* Support **indirect relations** such as “all Assets for this Task’s project” via a short, readable syntax (`@Assets[project]`).
-* Provide a consistent mental model for **fields**, **relations**, **filters**, **sorting**, and **grouping**.
+* Support **indirect (to-many) relations** such as “all Assets for this Project” via a short, readable syntax (`@Assets[project]`).
+* Cleanly separate **relation traversal** from **value operations**.
+* Provide a consistent mental model for **fields**, **relations**, **filters**, **sorting**, **grouping**, and **subqueries**.
 
 This DSL is implemented by:
 
+* `QuerySpec` / `QueryOneSpec`
 * `QueryContext`
 * `SQLQueryBuilder`
 * Enums: `GroupOperator`, `SortOrder`, `FilterOperation`
 
+## Table of Contents
+
+- [1. Design Principles (Summary)](#1-design-principles-summary)
+- [2. Quick Start](#2-quick-start)
+- [3. Core Concepts](#3-core-concepts)
+  - [3.1 Base model](#31-base-model)
+  - [3.2 Relationship mapping](#32-relationship-mapping)
+- [4. Field Path Syntax](#4-field-path-syntax)
+  - [4.1 Chain separator](#41-chain-separator)
+  - [4.2 Forward (simple) relations](#42-forward-simple-relations)
+  - [4.3 Field selection and aliasing](#43-field-selection-and-aliasing)
+- [5. Indirect Relation Segments (`@Model[field]`)](#5-indirect-relation-segments-modelfield)
+  - [5.1 Syntax](#51-syntax)
+  - [5.2 Semantics](#52-semantics)
+  - [5.3 Mixed paths](#53-mixed-paths)
+  - [5.4 Indirect chain extraction](#54-indirect-chain-extraction)
+- [6. Value Operations](#6-value-operations)
+  - [6.1 Design rule](#61-design-rule)
+  - [6.2 Modifiers vs aggregators](#62-modifiers-vs-aggregators)
+  - [6.3 `.distinct()` behavior](#63-distinct-behavior)
+  - [6.4 Examples](#64-examples)
+- [7. Filters DSL](#7-filters-dsl)
+  - [7.1 Simple equality](#71-simple-equality)
+  - [7.2 Explicit operators](#72-explicit-operators)
+  - [7.3 AND / OR grouping](#73-and--or-grouping)
+  - [7.4 Indirect fields in filters](#74-indirect-fields-in-filters)
+- [8. Sorting (`order_by`)](#8-sorting-order_by)
+- [9. Grouping Rules](#9-grouping-rules)
+  - [9.1 When a field is considered “grouped”](#91-when-a-field-is-considered-grouped)
+  - [9.2 SELECT behavior for grouped fields](#92-select-behavior-for-grouped-fields)
+  - [9.3 GROUP BY behavior](#93-group-by-behavior)
+- [10. Subqueries (`QuerySpec`)](#10-subqueries-queryspec)
+- [11. Putting It All Together](#11-putting-it-all-together)
+
 ---
 
-## 1. Core Concepts
+## 1. Design Principles (Summary)
 
-### 1.1 Base model
+* **Paths over joins** — users never write SQL joins.
+* **Explicit relationship metadata** — all join logic comes from `relationships`.
+* **Indirect relations as first-class** — `@Model[field]` segments encode reverse / one-to-many hops.
+* **Alias-first selection** — fields are expressed as **alias → field**, matching `SELECT expr AS alias`.
+* **Composable**: the same path syntax is used in:
 
-Each query is built **from a single base model** (table), usually a string:
+  * `fields` (SELECT)
+  * `filters` (WHERE)
+  * `order_by` (ORDER BY)
+  * grouping inference (GROUP BY)
+
+This DSL is intentionally **implementation-agnostic**: you can point it at SQLite, Postgres, or any SQL backend as long as the generated SQL and relationship mappings match your schema.
+
+---
+
+## 2. Quick Start
+
+Here is the smallest end-to-end slice: declare relationships, pick a base model, and use field paths (including indirect hops) to read or aggregate related data.
 
 ```python
-base_model = "Tasks"
+relationships = {
+    "Tasks.shot": "Shots.id",
+    "Shots.project": "Projects.id",
+    "Tasks.assigned_to": "Users.id",
+    "Assets.task": "Tasks.id",
+    "Assets.owner": "Users.id",
+}
 
-context = SQLQueryBuilder.build_context(
-    model=base_model,
+ctx = SQLQueryBuilder.build_context(
+    model="Tasks",
+    fields=[
+        "name",
+        ("unique_owner_count", "@Assets[task].owner.email.distinct().count()"),
+        {"project_name": "shot.project.name"},
+    ],
+    filters={"status": "active"},
+    relationships=relationships,
+    order_by={"shot.project.name": "asc"},
+    limit=10,
+)
+
+print(ctx.query)
+print(ctx.parameters)
+```
+
+Key takeaways:
+
+* Field paths traverse relations; indirect segments hop backward via FKs.
+* Fields are declared as **alias → field**.
+* Aggregators apply to the final scalar in the path; indirect hops imply grouping.
+* You never hand-write joins; relationships drive them.
+
+---
+
+## 3. Core Concepts
+
+### 3.1 Base model
+
+Each query starts from **a single base model** (table):
+
+```python
+ctx = QuerySpec(
+    model="Tasks",
     fields=[...],
     filters={...},
-    relationships={...},
+    relationships=relationships,
 )
 ```
 
 Internally:
 
-* Base model is aliased as `_` in SQL:
+* The base model is aliased as `_` in SQL
+* Simple fields map directly to `_.field`
 
-  * `Tasks` → `'Tasks' AS _`
-* Simple fields like `"name"` map to `_.name` in SQL.
+Example:
+
+```python
+fields = ["id", "name"]
+```
+
+```sql
+SELECT _.id, _.name
+FROM Tasks AS _
+```
 
 ---
 
-### 1.2 Relationship mapping
+### 3.2 Relationship mapping
 
 Relationships between models are declared in a flat dictionary:
 
@@ -58,10 +157,10 @@ relationships = {
 }
 ```
 
-**Format:**
+**Format**
 
-* Key: `"LeftModel.left_field"`
-* Value: `"RightModel.right_field"`
+* **Key**: `LeftModel.left_field`
+* **Value**: `RightModel.right_field`
 
 Semantics:
 
@@ -76,25 +175,25 @@ This mapping is used by:
 
 ---
 
-## 2. Field Path Syntax
+## 4. Field Path Syntax
 
-### 2.1 Chain separator
+### 4.1 Chain separator
 
-The **chain separator** is a dot:
+Field paths use `.` as the chain separator:
 
-```python
-SQLQueryBuilder.CHAIN_SEPARATOR = "."
+```text
+shot.sequence.project.name
 ```
 
-A path is a sequence of **segments**:
+A path is a sequence of **segments**, resolved left → right.
 
 * `"name"` → field on the base model
 * `"shot.name"` → field `name` on the related model `shot`
 * `"shot.sequence.project.name"` → multi-hop relation
 
-### 2.2 Simple paths (forward relations)
+### 4.2 Forward (simple) relations
 
-Simple paths **do not start with `@`** and are resolved using `relationships`:
+Segments **without `@`** are resolved using `relationships`:
 
 ```python
 fields = [
@@ -121,11 +220,41 @@ In SQL, these are turned into:
    * `"shot.sequence"`
    * `"shot.sequence.project"`
 
+### 4.3 Field Selection and Aliasing
+
+`fields` may be provided in three equivalent forms:
+
+#### String
+
+```python
+fields = ["name"]
+```
+
+Alias defaults to the same value.
+
+#### Tuple
+
+```python
+fields = [("task_name", "name")]
+```
+
+#### Dict
+
+```python
+fields = [{"task_name": "name"}]
+```
+
+All forms normalize to:
+
+```sql
+SELECT <field_expr> AS <alias>
+```
+
 ---
 
-## 3. Indirect Relation Segments (`@Model[field]`)
+## 5. Indirect Relation Segments (`@Model[field]`)
 
-### 3.1 Syntax
+### 5.1 Syntax
 
 An **indirect relation segment** has the form:
 
@@ -147,7 +276,7 @@ These are treated as a **special path segment** inside a field chain:
 "project.@Assets[project].owner.name"
 ```
 
-### 3.2 Semantics
+### 5.2 Semantics
 
 Informally:
 
@@ -162,29 +291,27 @@ relationships = {
 }
 ```
 
-then:
+Then:
 
-* From base model **Tasks**:
+* From **Tasks**:
 
-  * `@Assets[task]` means:
+  * `@Assets[task]` → all Assets where `Assets.task = Tasks.id`
 
-    * “All `Assets` where `Assets.task = Tasks.id`”.
-* From context **Projects**:
+* From **Projects**:
 
-  * `@Assets[project]` means:
+  * `@Assets[project]` → all Assets where `Assets.project = Projects.id`
 
-    * “All `Assets` where `Assets.project = Projects.id`”.
+You never write the join condition manually — it is inferred.
 
-The DSL does **not** require you to specify `Assets.task = Tasks.id` manually in the query. It only requires the relationship mapping.
+---
 
-### 3.3 Mixed paths with indirect segments
+### 5.3 Mixed paths
 
-You can mix forward and indirect hops:
+Forward and indirect segments can be mixed freely:
 
-```python
-"project.@Assets[project].owner.name"
-"shot.sequence.project.@Assets[project].name"
-"shot.sequence.project.@Assets[project].created_by.name"
+```text
+project.@Assets[project].owner.email
+shot.sequence.project.@Assets[project].created_at
 ```
 
 Resolution pattern:
@@ -193,7 +320,9 @@ Resolution pattern:
 2. At `@Assets[project]`, treat this as a hop from the current model (here `Projects`) to `Assets` using `Assets.project`.
 3. Continue with normal segments (`owner`, `created_by`, `name`) from the `Assets` side, using `relationships`.
 
-### 3.4 Indirect chain extraction
+---
+
+### 5.4 Indirect chain extraction
 
 A helper like:
 
@@ -210,73 +339,104 @@ is used to:
 
 ---
 
-## 4. Relation & Value Aggregators
+## 6. Value Operations
 
-These apply to relation segments (`@Model[field]`) or scalar values.
+### 6.1 Design rule
 
-### 4.1 Aggregators Overview
+* Indirect relations (`@Model[field]`) always yield a **value stream**.
+* Value operations apply **only to the terminal scalar**.
+* Relation traversal and value operations are strictly separated.
 
-Aggregators can operate either at the **relation level** (on `@Model[field]` segments)
-or at the **value level** (on scalar fields at the end of the chain).
-
-| Aggregator   | Level    | SQL Mapping / Purpose                             | Result Type           |
-| ------------ | -------- | ------------------------------------------------- | --------------------- |
-| `.one()`     | Relation | Treat relation as 1-to-1 (`SELECT .. LIMIT 1`)    | Scalar entity or NULL |
-| `distinct()` | Value    | `JSON_GROUP_ARRAY(DISTINCT field ORDER BY field)` | Array                 |
-| `count()`    | Value    | `COUNT(*)` or `COUNT(field)`                      | Scalar                |
-| `sum()`      | Value    | `SUM(field)`                                      | Scalar                |
-| `min()`      | Value    | `MIN(field)`                                      | Scalar                |
-| `max()`      | Value    | `MAX(field)`                                      | Scalar                |
-| `avg()`      | Value    | `AVG(field)`                                      | Scalar                |
-
-### 4.2 Aggregator Examples
-
-**Relation-level (`.one()`) examples**
+Correct usage:
 
 ```text
-# Task → Assignments (logically one primary assignment)
-task.@Assignments[task].one().user.name
-
-# Asset → Versions (pick latest / canonical version)
-asset.@Versions[asset].one().file_path
+@Assets[project].name.distinct()
+@Assets[project].created_at.min()
+@Assets[project].owner.email.distinct().count()
 ```
-
-**Value-level (`distinct`, `count`, `sum`, `avg`, ...) examples**
-
-```text
-# Unique emails of all owners of assets in a project
-project.@Assets[project].owner.email.distinct()
-
-# Unique tag names across all assets linked to shots under a task
-task.shot.@AssetShot[shot].tag.name.distinct()
-
-# Aggregated numeric examples
-project.@Assets[project].duration.sum()
-project.@Assets[project].owner_id.count()
-project.@Assets[project].amount.avg()
-```
-
-### 4.3 Grammar & Precedence
-
-(kept concise to fit DSL)
-
-* Relation resolves first.
-* Relation aggregators attach only to relation segment.
-* Value aggregators attach only to terminal scalar fields.
-* Only one relation aggregator allowed.
-* Default relation return type = array.
 
 ---
 
-## 5. Filters DSL
+### 6.2 Modifiers vs aggregators
+
+**Value modifiers (do not consume the stream):**
+
+| DSL           | Meaning                           |
+| ------------- | --------------------------------- |
+| `.distinct()` | Apply `DISTINCT` to the value set |
+
+**Scalar aggregators (consume values → scalar):**
+
+| DSL        | SQL            | Result |
+| ---------- | -------------- | ------ |
+| `.count()` | `COUNT(value)` | scalar |
+| `.sum()`   | `SUM(value)`   | scalar |
+| `.min()`   | `MIN(value)`   | scalar |
+| `.max()`   | `MAX(value)`   | scalar |
+| `.avg()`   | `AVG(value)`   | scalar |
+
+---
+
+### 6.3 `.distinct()` behavior
+
+`.distinct()` is a **value modifier**, not an aggregator.
+
+#### With scalar aggregator
+
+```text
+value.distinct().count()
+```
+
+```sql
+COUNT(DISTINCT value)
+```
+
+Other examples:
+
+```text
+value.distinct().sum()  → SUM(DISTINCT value)
+value.distinct().avg()  → AVG(DISTINCT value)
+```
+
+#### Case B — terminal (no scalar aggregator)
+
+```text
+value.distinct()
+```
+
+Materializes a list:
+
+```sql
+JSON_GROUP_ARRAY(DISTINCT value)
+  FILTER (WHERE value IS NOT NULL)
+```
+
+---
+
+### 6.4 Examples
+
+```text
+# All unique asset owner emails per project
+project.@Assets[project].owner.email.distinct()
+
+# Count of unique tags across all assets in a shot
+task.shot.@AssetShot[shot].tag.name.distinct().count()
+
+# Earliest asset creation time
+shot.@Assets[shot].created_at.min()
+```
+
+---
+
+## 7. Filters DSL
 
 Filters are expressed as nested dictionaries, using:
 
 * **field paths** (simple or indirect) as keys
-* **`FilterOperation`** or string operators as inner keys
+* `FilterOperation` or string operators as inner keys
 * `GroupOperator` (or `"AND"`, `"OR"`) for grouping
 
-### 4.1 Simple equality
+### 7.1 Simple equality
 
 ```python
 filters = {
@@ -291,7 +451,9 @@ _.status = ?
 -- params: ["active"]
 ```
 
-### 4.2 Explicit operations
+---
+
+### 7.2 Explicit operators
 
 Supported operations come from `FilterOperation` (e.g. `eq`, `lt`, `lte`, `gt`, `gte`, `contains`, `in`, `not_in`, etc.):
 
@@ -309,14 +471,16 @@ _.age >= ? AND _.name LIKE '%' || ? || '%'
 -- params: [18, "John"]
 ```
 
-### 4.3 Grouping with AND / OR
+---
+
+### 7.3 AND / OR grouping
 
 ```python
 filters = {
     "OR": {
         "shot.sequence.project.name": {"contains": "Forest"},
-        "shot.status": {"eq": "Completed"},
-        "assigned_to.role": {"eq": "Artist"},
+        "shot.status": "Completed",
+        "assigned_to.role": "Artist",
     }
 }
 ```
@@ -331,7 +495,7 @@ Generated WHERE (simplified):
 )
 ```
 
-### 4.4 Indirect fields in filters
+### 7.4 Indirect fields in filters
 
 You can filter using indirect paths:
 
@@ -345,7 +509,7 @@ This is resolved to the correct alias using `_build_inner_alias` and `resolve_mo
 
 ---
 
-## 5. Sorting DSL (`order_by`)
+## 8. Sorting (`order_by`)
 
 Sorting is specified as:
 
@@ -389,9 +553,9 @@ order_by = {
 
 ---
 
-## 6. Grouping and Aggregation
+## 9. Grouping Rules
 
-### 6.1 When a field is considered “grouped”
+### 9.1 When a field is considered “grouped”
 
 A field is considered to represent a **one-to-many/indirect relation** if it includes at least one **indirect relation segment**:
 
@@ -407,7 +571,7 @@ SQLQueryBuilder._is_group_field(
 * Aggregated in `SELECT` via `JSON_GROUP_ARRAY(...)`.
 * Grouped in `GROUP BY` using the **left side** of the relation.
 
-### 6.2 SELECT behavior for grouped fields
+### 9.2 SELECT behavior for grouped fields
 
 If a field is in `grouped_fields`, its inner alias is wrapped:
 
@@ -431,7 +595,7 @@ JSON_GROUP_ARRAY('shot.sequence.project.@Assets[project]'.name)
   AS 'shot.sequence.project.@Assets[project].name'
 ```
 
-### 6.3 GROUP BY behavior
+### 9.3 GROUP BY behavior
 
 `build_group_by_clause`:
 
@@ -471,7 +635,46 @@ Generated GROUP BY:
 
 ---
 
-## 7. Putting It All Together (End-to-End Example)
+## 10. Subqueries (`QuerySpec`)
+
+Subqueries reuse the same DSL.
+
+```python
+ctx = QuerySpec(
+    model="Shots",
+    fields=[
+        "id",
+        "name",
+        (
+            "earliest_work_ts",
+            (
+                QuerySpec(
+                    model="TaskStartLog",
+                    fields={"v": "started_at"},
+                    filters={"task.shot": OuterRef("id")},
+                )
+                |
+                QuerySpec(
+                    model="TimesheetEntry",
+                    fields={"v": "start_time"},
+                    filters={"shot": OuterRef("id")},
+                )
+            ).min(),
+        ),
+    ],
+)
+```
+
+Rules:
+
+* `QuerySpec` → returns **array** by default
+* `QueryOneSpec` → returns **scalar row**
+* Applying a value aggregator (`min`, `count`, etc.) forces a scalar
+* Subqueries inherit outer relationships unless overridden
+
+---
+
+## 11. Putting It All Together
 
 ```python
 base_model = "Tasks"
@@ -553,19 +756,3 @@ Conceptually, this means:
 * **LIMIT**:
 
   * 5 rows.
-
----
-
-## 8. Design Principles
-
-* **Low ceremony**: the user writes paths like `"shot.sequence.project.name"` and `"@Assets[project].name"`; `SQLQueryBuilder` generates all joins.
-* **Explicit relationship metadata**: all join logic comes from `relationships`.
-* **Indirect relations as first-class**: `@Model[field]` segments encode reverse/one-to-many hops cleanly.
-* **Composable**: the same path syntax is used in:
-
-  * `fields` (SELECT)
-  * `filters` (WHERE)
-  * `order_by` (ORDER BY)
-  * grouping inference (GROUP BY)
-
-This DSL is intentionally **implementation-agnostic**: you can point it at SQLite, Postgres, or any SQL backend as long as the generated SQL and relationship mappings match your schema.
