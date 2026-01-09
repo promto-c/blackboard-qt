@@ -24,7 +24,6 @@ from blackboard.utils.data_fetch_manager import FetchManager
 from blackboard.utils.application_utils import QApplicationUtils
 from blackboard.widgets.menu import ContextMenu
 from blackboard.widgets.momentum_scroll_widget import MomentumScrollTreeWidget
-from blackboard.widgets.button import TearOffWidgetAction
 from blackboard.widgets.tag_widget import TagListView
 from blackboard.widgets.scalable_view import ScalableView
 from blackboard.widgets.item_delegate import AdaptiveColorMappingDelegate, HighlightItemDelegate, ThumbnailDelegate
@@ -1061,9 +1060,7 @@ class GroupableTreeWidget(MomentumScrollTreeWidget):
         self.column_management_widget = ColumnManagementWidget(self)
         column_management_widget_action = QtWidgets.QWidgetAction(self)
         column_management_widget_action.setDefaultWidget(self.column_management_widget)
-        tear_off_widget_action = TearOffWidgetAction(column_management_widget_action, menu=show_hide_column_menu, auto_restore=True)
-        show_hide_column_menu.addAction(tear_off_widget_action)
-        show_hide_column_menu.addAction(column_management_widget_action)
+        show_hide_column_menu.addAction(column_management_widget_action, detachable=True, auto_restore=True)
         hide_this_column = manage_columns_section_action.addAction(text='Hide This Column')
         reset_sorting = manage_columns_section_action.addAction(text='Reset Sorting')
 

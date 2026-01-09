@@ -21,14 +21,18 @@ class TagListView(MomentumScrollListView):
 
     # Initialization and Setup
     # ------------------------
-    def __init__(self, parent=None, show_only_checked: bool = True, read_only: bool = False,
-                 editTriggers=QtWidgets.QListView.EditTrigger.NoEditTriggers,
-                 viewMode=QtWidgets.QListView.ViewMode.IconMode,
-                 resizeMode=QtWidgets.QListView.ResizeMode.Adjust,
-                 dragDropMode=QtWidgets.QListView.DragDropMode.NoDragDrop,
-                 mouseTracking=True,
-                 *args, **kwargs
-                 ):
+    def __init__(
+        self,
+        parent=None,
+        show_only_checked: bool = True,
+        read_only: bool = False,
+        editTriggers=QtWidgets.QListView.EditTrigger.NoEditTriggers,
+        viewMode=QtWidgets.QListView.ViewMode.IconMode,
+        resizeMode=QtWidgets.QListView.ResizeMode.Adjust,
+        dragDropMode=QtWidgets.QListView.DragDropMode.NoDragDrop,
+        mouseTracking=True,
+        *args, **kwargs
+    ):
         """Initialize the TagListView widget.
         """
         super().__init__(

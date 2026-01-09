@@ -765,6 +765,28 @@ class UIUtil:
         # Return the animation object.
         return animation
 
+    @classmethod
+    def scroll_to_bottom(cls, scroll_area: MomentumScrollArea, animation: bool = True):
+        """Smoothly animate scrolling to the bottom of the scroll area.
+        """
+        # Get the vertical scroll bar of the scroll area
+        scroll_bar = scroll_area.verticalScrollBar()
+
+        # If animation is not enabled, scroll directly to the bottom
+        if not animation:
+            scroll_bar.setValue(scroll_bar.maximum())
+            return
+
+        UIUtil.apply_animation(
+            widget=scroll_bar,
+            property_name="value",
+            start_value=scroll_bar.value(),
+            end_value=scroll_bar.maximum(),
+            duration=500,
+            easing_curve=QtCore.QEasingCurve.Type.OutCubic
+        )
+
+
 class FlexTextBrowser(QtWidgets.QTextBrowser):
 
     STYLE_SHEET = '''
@@ -1378,7 +1400,7 @@ class TransparentFloatingLayout(QtWidgets.QWidget):
         self.placeholder_card.setVisible(False)
 
         # Scroll to the bottom of the scroll area
-        QtCore.QTimer.singleShot(0, self.scroll_to_bottom)
+        QtCore.QTimer.singleShot(0, lambda: UIUtil.scroll_to_bottom(self.scroll_area))
 
     def ensure_status_visible(self, status):
         """Ensure that the given status is visible by modifying the filter if necessary.
@@ -1389,22 +1411,6 @@ class TransparentFloatingLayout(QtWidgets.QWidget):
         active_statuses = self.status_filter_widget.active_filters or STATUS_ORDER
         if status not in active_statuses:
             self.status_filter_widget.set_filter_checked(status)
-
-    def scroll_to_bottom(self):
-        """Smoothly animate scrolling to the bottom of the scroll area.
-        """
-        # Get the vertical scroll bar of the scroll area
-        scroll_bar = self.scroll_area.verticalScrollBar()
-
-        # Use UIUtil to create and start the scroll animation
-        UIUtil.apply_animation(
-            widget=scroll_bar,
-            property_name="value",
-            start_value=scroll_bar.value(),
-            end_value=scroll_bar.maximum(),
-            duration=500,
-            easing_curve=QtCore.QEasingCurve.Type.OutCubic
-        )
 
     def filter_cards(self):
         """Filter cards based on the selected filter button.

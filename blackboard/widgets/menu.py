@@ -231,16 +231,12 @@ class ContextMenu(QtWidgets.QMenu):
 
 
 class ResizableMenu(ContextMenu):
-    """A resizable popup menu with drag-and-resize functionality.
+    """A resizable popup menu using QSizeGrip.
 
     Attributes:
         button (Optional[QtWidgets.QPushButton]): Optional button to position the menu relative to.
         resized (QtCore.Signal): Signal emitted when the menu is resized.
     """
-
-    # Constants
-    # ---------
-    DEFAULT_RESIZE_HANDLE_SIZE = 20
 
     # Signals
     # -------
@@ -248,107 +244,70 @@ class ResizableMenu(ContextMenu):
 
     # Initialization and Setup
     # ------------------------
-    def __init__(self, button: Optional[QtWidgets.QPushButton] = None,
-                 resize_handle_size: int = DEFAULT_RESIZE_HANDLE_SIZE):
-        """Initialize the popup menu and set up drag-resize functionality.
+    def __init__(
+        self,
+        button: Optional[QtWidgets.QPushButton] = None,
+        grip_size: int = 16,
+        grip_margin: int = 4,
+    ):
+        """Initialize the popup menu and install a QSizeGrip.
 
         Args:
-            button (Optional[QtWidgets.QPushButton]): Optional button to position the menu relative to.
-            resize_handle_size (int): Size of the resize handle in pixels.
+            button: Optional button to position the menu relative to.
+            grip_size: Size of the QSizeGrip widget in pixels.
+            grip_margin: Margin from the bottom-right corner in pixels.
         """
         super().__init__()
 
         # Store the arguments
         self.button = button
-        self._resize_handle_size = resize_handle_size
+        self._grip_size = grip_size
+        self._grip_margin = grip_margin
 
-        # Initialize setup
-        self.__init_attributes()
+        # Ensure the menu can actually resize
+        self.setMinimumSize(220, 160)
 
-    def __init_attributes(self):
-        """Initialize drag-resize related attributes.
-        """
-        self._is_dragging = False
-        self._drag_start_point = QtCore.QPoint()
-        self._initial_size = self.size()
+        # Create the grip (child widget inside the menu)
+        self._size_grip = QtWidgets.QSizeGrip(self)
+        self._size_grip.setFixedSize(self._grip_size, self._grip_size)
+        self._size_grip.setCursor(QtCore.Qt.CursorShape.SizeFDiagCursor)
+        self._size_grip.raise_()
 
     # Private Methods
     # ---------------
-    def _resize_handle_rect(self) -> QtCore.QRect:
-        """Calculate and return the rectangle for the resize handle area."""
-        return QtCore.QRect(
-            self.width() - self._resize_handle_size,
-            self.height() - self._resize_handle_size,
-            self._resize_handle_size,
-            self._resize_handle_size
-        )
+    def _update_grip_geometry(self):
+        """Move the QSizeGrip to the bottom-right corner."""
+        x = self.width() - self._grip_size - self._grip_margin
+        y = self.height() - self._grip_size - self._grip_margin
+        self._size_grip.move(max(0, x), max(0, y))
+        self._size_grip.raise_()
 
     # Overridden Methods
     # ------------------
     def keyPressEvent(self, event: QtGui.QKeyEvent):
-        """Handle key press events to prevent closing the popup on Enter or Return keys.
+        """Prevent closing the popup on Enter/Return.
         """
         if event.key() in (QtCore.Qt.Key.Key_Return, QtCore.Qt.Key.Key_Enter):
-            # Do not close the menu on Enter/Return.
             event.ignore()
-        else:
-            super().keyPressEvent(event)
+            return
+
+        super().keyPressEvent(event)
 
     def showEvent(self, event: QtGui.QShowEvent):
-        """Override show event to modify the position of the menu popup.
+        """Position the menu and place the grip.
         """
         if self.button:
-            # Adjust the position
             pos = self.button.mapToGlobal(QtCore.QPoint(0, self.button.height()))
             self.move(pos)
+
         super().showEvent(event)
 
     def resizeEvent(self, event: QtGui.QResizeEvent):
-        """Handle the resize event and emit a signal with the new size.
+        """Keep the grip pinned and emit resized.
         """
-        self.resized.emit(self.size())
         super().resizeEvent(event)
-
-    def mousePressEvent(self, event: QtGui.QMouseEvent):
-        """Start dragging if the mouse is pressed within the resize handle area.
-        """
-        if self._resize_handle_rect().contains(event.pos()):
-            # Only start dragging if the mouse is within the handle area
-            self._is_dragging = True
-            self._drag_start_point = event.pos()
-            self._initial_size = self.size()
-            self.setCursor(QtGui.QCursor(QtCore.Qt.CursorShape.SizeFDiagCursor))
-        else:
-            super().mousePressEvent(event)
-
-    def mouseMoveEvent(self, event: QtGui.QMouseEvent):
-        """Resize the menu if dragging; otherwise, update the cursor based on position.
-        """
-        # If dragging, resize the widget
-        if self._is_dragging:
-            delta = event.pos() - self._drag_start_point
-            new_size = QtCore.QSize(
-                max(self._initial_size.width() + delta.x(), self.minimumWidth()),
-                max(self._initial_size.height() + delta.y(), self.minimumHeight())
-            )
-            self.resize(new_size)
-        else:
-            # Only change the cursor if the mouse is in the resize handle area
-            if self._resize_handle_rect().contains(event.pos()):
-                self.setCursor(QtGui.QCursor(QtCore.Qt.CursorShape.SizeFDiagCursor))
-            else:
-                # Reset to default cursor
-                self.unsetCursor()
-
-            # Call base implementation for default behavior
-            super().mouseMoveEvent(event)
-
-    def mouseReleaseEvent(self, event: QtGui.QMouseEvent):
-        """Stop dragging and reset the cursor when the mouse is released.
-        """
-        self._is_dragging = False
-        self.unsetCursor()
-        super().mouseReleaseEvent(event)
+        self._update_grip_geometry()
+        self.resized.emit(self.size())
 
 
 # Examples

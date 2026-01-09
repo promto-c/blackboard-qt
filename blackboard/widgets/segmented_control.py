@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from typing import Iterable
 
-import math
-
 from qtpy import QtCore, QtWidgets
 
 from blackboard.widgets import FlowLayout
@@ -25,9 +23,9 @@ class SegmentedControl(QtWidgets.QFrame):
     # Initialization and Setup
     # ------------------------
     def __init__(
-            self,
-            items: Iterable[str],
-            parent: QtWidgets.QWidget | None = None,
+        self,
+        items: Iterable[str],
+        parent: QtWidgets.QWidget | None = None,
     ):
         """Initialize the segmented control and populate items.
 
@@ -39,8 +37,10 @@ class SegmentedControl(QtWidgets.QFrame):
 
         self._items: list[str] = []
         self._buttons: list[QtWidgets.QToolButton] = []
-        self._group = QtWidgets.QButtonGroup(self)
-        self._group.setExclusive(True)
+        self._group = QtWidgets.QButtonGroup(
+            self,
+            exclusive=True,
+        )
 
         self.__init_ui()
         self.__init_connections()
