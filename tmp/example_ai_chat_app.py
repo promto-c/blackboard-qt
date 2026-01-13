@@ -1,10 +1,11 @@
-from qtpy.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QWidget, QTextEdit, QPushButton
-from qtpy.QtCore import QThread, Signal
-from qtpy import QtCore, QtGui, QtWidgets
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import sys
 import torch
 from threading import Event
+
+from qtpy.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QWidget, QTextEdit, QPushButton
+from qtpy.QtCore import QThread, Signal
+from qtpy import QtCore, QtGui, QtWidgets
 # import os
 # os.environ["PYTORCH_MPS_HIGH_WATERMARK_RATIO"] = "0.0"
 

@@ -572,7 +572,7 @@ class FilterWidget(QtWidgets.QWidget):
         self._value = None
         self._is_filter_applied = False
         self._initial_focus_widget: QtWidgets.QWidget = None
-        self._saved_state = dict()
+        self._saved_state: dict[str, Any] = {}
         self._filter_mode: 'FilterMode' = FilterMode.STANDARD
 
     def __init_ui(self):
@@ -1484,7 +1484,7 @@ class MultiSelectFilterWidget(FilterWidget):
         """Restore the checked state of items from the provided dictionary.
         """
         model_indexes = bb.utils.TreeUtil.get_model_indexes(self.tree_view.model(), parent_index)
-        model_index_to_check_state = dict()
+        model_index_to_check_state: dict[QtCore.QModelIndex, QtCore.Qt.CheckState] = {}
 
         is_proxy_model = isinstance(self.tree_view.model(), bb.utils.CheckableProxyModel)
 

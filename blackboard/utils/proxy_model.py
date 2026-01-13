@@ -274,9 +274,8 @@ class CheckableProxyModel(QtCore.QSortFilterProxyModel):
     def __init__(self, source_model: QtCore.QAbstractItemModel = None, parent=None):
         """Initialize the proxy model and its state tracking dictionary."""
         super().__init__(parent)
-        self.check_states = dict()
-        # To store additional rows data
-        self._additional_rows = list()
+        self.check_states: dict[QtCore.QModelIndex, QtCore.Qt.CheckState] = {}
+        self._additional_rows = []
 
         if source_model is not None:
             self.setSourceModel(source_model)
