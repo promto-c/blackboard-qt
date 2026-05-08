@@ -1402,7 +1402,7 @@ class MultiSelectFilterWidget(FilterWidget):
         """
         full_text = ', '.join(self.tag_list_view.get_tags())
 
-        clipboard = QtWidgets.qApp.clipboard()
+        clipboard = QtWidgets.QApplication.clipboard()
         clipboard.setText(full_text)
 
         # Show tooltip message

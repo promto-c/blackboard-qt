@@ -1,6 +1,6 @@
 import sys
 import math
-from PyQt5 import QtCore, QtGui, QtWidgets
+from qtpy import QtCore, QtGui, QtWidgets
 from tablerqicon import TablerQIcon
 import scipy
 import numpy as np
@@ -8,7 +8,7 @@ from enum import Enum
 
 
 class ScreenCaptureArea(QtWidgets.QWidget):
-    closed = QtCore.pyqtSignal()
+    closed = QtCore.Signal()
 
     def __init__(self):
         super().__init__()
@@ -61,8 +61,8 @@ class ToolMode(Enum):
 
 class DrawingLabel(QtWidgets.QWidget):
     # Define the signal
-    drawing_changed = QtCore.pyqtSignal()
-    selection_changed = QtCore.pyqtSignal()
+    drawing_changed = QtCore.Signal()
+    selection_changed = QtCore.Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)

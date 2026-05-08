@@ -66,10 +66,11 @@ class ScalableView(QtWidgets.QGraphicsView):
         self.zoom_level = self.DEFAULT_ZOOM_LEVEL
 
         # Register this widget in the application's global list of scalable widgets.
-        if hasattr(QtWidgets.qApp, 'scalable_widgets'):
-            QtWidgets.qApp.scalable_widgets.append(self.widget)
+        app = QtWidgets.QApplication.instance()
+        if hasattr(app, 'scalable_widgets'):
+            app.scalable_widgets.append(self.widget)
         else:
-            QtWidgets.qApp.scalable_widgets = [self.widget]
+            app.scalable_widgets = [self.widget]
 
     def __init_ui(self):
         """Initialize the UI of the widget.
@@ -109,10 +110,11 @@ class ScalableView(QtWidgets.QGraphicsView):
         Returns:
             bool: True if the widget is a descendant of a ScalableView, False otherwise.
         """
-        if not hasattr(QtWidgets.qApp, 'scalable_widgets'):
+        app = QtWidgets.QApplication.instance()
+        if not hasattr(app, 'scalable_widgets'):
             return False
 
-        return any(scalable_widget.isAncestorOf(widget) for scalable_widget in QtWidgets.qApp.scalable_widgets)
+        return any(scalable_widget.isAncestorOf(widget) for scalable_widget in app.scalable_widgets)
 
     # Extended Methods
     # ----------------
